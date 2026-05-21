@@ -1,0 +1,84 @@
+"""
+AetherFlowModule — Lightning training module for Aether3D multi-modal flow matching.
+
+Analogous to LuminaFlowModule but handles the joint (spatial, gene, class) state
+and the weighted multi-task loss (lambda_g, lambda_c).
+"""
+
+from __future__ import annotations
+
+from copy import deepcopy
+from typing import Any, Dict
+
+import pytorch_lightning as pl
+import torch
+import torch.nn as nn
+
+from ..config.aether_config import Aether3DConfig
+from ..flow import create_flow_transport
+from ..models.aether_velocity_field import MultiModalVelocityField
+
+
+class AetherFlowModule(pl.LightningModule):
+    def __init__(self, config: Aether3DConfig, model: MultiModalVelocityField):
+        super().__init__()
+        self.save_hyperparameters(config.model_dump_for_checkpoint())
+        self.cfg = config
+        self.model = model
+        self.ema_model = deepcopy(model)
+        for p in self.ema_model.parameters():
+            p.requires_grad_(False)
+
+        self.transport = create_flow_transport(
+            path=config.path_type,
+            prediction=config.prediction,
+        )
+
+    def configure_optimizers(self):
+        return torch.optim.AdamW(self.model.parameters(), lr=self.cfg.lr, weight_decay=self.cfg.weight_decay)
+
+    def _compute_multi_modal_loss(self, pred: Dict[str, torch.Tensor], target: Dict[str, torch.Tensor]):
+        loss_x = torch.nn.functional.mse_loss(pred["vx"], target["vx"])
+        loss_g = torch.nn.functional.mse_loss(pred["vg"], target["vg"])
+        loss_c = torch.nn.functional.mse_loss(pred["vc"], target.get("vc", torch.zeros_like(pred["vc"])))
+
+        total = loss_x + self.cfg.lambda_g * loss_g + self.cfg.lambda_c * loss_c
+        return total, {"loss_x": loss_x, "loss_g": loss_g, "loss_c": loss_c}
+
+    def training_step(self, batch, batch_idx):
+        # batch from SerialSliceTrajectoryDataset
+        x0, g0, c0 = batch["x0"], batch["g0"], batch["c0"]
+        x1, g1, c1 = batch["x1"], batch["g1"], batch["c1"]
+
+        t = torch.rand(x0.shape[0], device=x0.device) * 0.98 + 0.01
+
+        # Simple linear interpolation for targets (velocity = x1-x0 etc.)
+        target = {
+            "vx": x1 - x0,
+            "vg": g1 - g0,
+            "vc": c1 - c0,
+        }
+
+        # Current state at t (linear for now)
+        state = {
+            "x": x0 + t.unsqueeze(1) * (x1 - x0),
+            "g": g0 + t.unsqueeze(1) * (g1 - g0),
+            "c": c0 + t.unsqueeze(1) * (c1 - c0),
+        }
+
+        pred = self.model(state, t, torch.zeros(x0.shape[0], dtype=torch.long, device=x0.device))  # y placeholder
+
+        loss, loss_dict = self._compute_multi_modal_loss(pred, target)
+        self.log("train_loss", loss, prog_bar=True)
+        for k, v in loss_dict.items():
+            self.log(f"train_{k}", v)
+
+        return loss
+
+    @torch.no_grad()
+    def _update_ema(self):
+        for ema_p, p in zip(self.ema_model.parameters(), self.model.parameters()):
+            ema_p.data.mul_(self.cfg.ema_decay).add_(p.data, alpha=1 - self.cfg.ema_decay)
+
+    def on_train_batch_end(self, *args, **kwargs):
+        self._update_ema()
