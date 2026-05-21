@@ -1,0 +1,62 @@
+[build-system]
+requires = ["hatchling", "hatch-vcs"]
+build-backend = "hatchling.build"
+
+[project]
+name = "aether-3d"
+dynamic = ["version"]
+description = "Learning Continuous 3D Tissue Vector Fields from Serial Spatial Omics Slices"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+authors = [
+  { name = "Zeyu Fu Lab", email = "zeyufu@ustc.edu.cn" }
+]
+keywords = [
+  "spatial-omics",
+  "3d-reconstruction",
+  "flow-matching",
+  "optimal-transport",
+  "single-cell",
+  "generative-ai",
+  "bioinformatics",
+]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Science/Research",
+  "Topic :: Scientific/Engineering :: Bio-Informatics",
+  "Programming Language :: Python :: 3.10",
+  "License :: OSI Approved :: MIT License",
+]
+
+dependencies = [
+  "torch>=2.4",
+  "numpy>=1.26",
+  "pandas>=2.2",
+  "anndata>=0.10",
+  "scanpy>=1.10",
+  "pydantic>=2.8",
+  "tqdm",
+  "einops",
+  "timm",
+  "pot",  # optional later
+]
+
+[project.optional-dependencies]
+dev = ["pytest", "ruff", "mypy", "lightning", "wandb"]
+viz = ["plotly", "pyvista", "ipywidgets", "napari[all]"]
+
+[project.scripts]
+aether-reconstruct = "aether_3d.cli:reconstruct"
+
+[tool.hatch.version]
+source = "vcs"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/aether_3d"]
+
+[tool.ruff]
+target-version = "py310"
+
+[tool.mypy]
+strict = true
