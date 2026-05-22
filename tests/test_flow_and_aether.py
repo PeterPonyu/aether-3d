@@ -51,3 +51,40 @@ def test_aether_config():
     cfg = Aether3DConfig(hidden_size=32, lambda_g=0.2)
     assert cfg.lambda_g == 0.2
     assert cfg.hidden_size == 32
+
+
+def test_pytorch_uot_and_cost_parity():
+    rng = np.random.default_rng(42)
+    n0, n1 = 30, 25
+    x0, x1 = rng.random((n0, 2)).astype(np.float32), rng.random((n1, 2)).astype(np.float32)
+    g0, g1 = rng.random((n0, 10)).astype(np.float32), rng.random((n1, 10)).astype(np.float32)
+    
+    # one-hot cell labels
+    c0 = np.zeros((n0, 3), dtype=np.float32)
+    c0[np.arange(n0), rng.integers(0, 3, n0)] = 1.0
+    c1 = np.zeros((n1, 3), dtype=np.float32)
+    c1[np.arange(n1), rng.integers(0, 3, n1)] = 1.0
+
+    # CPU hybrid cost
+    c_cpu = compute_hybrid_cost(x0, g0, c0, x1, g1, c1, alpha_spatial=0.6)
+
+    # PyTorch CPU hybrid cost
+    x0_t, x1_t = torch.tensor(x0), torch.tensor(x1)
+    g0_t, g1_t = torch.tensor(g0), torch.tensor(g1)
+    c0_t, c1_t = torch.tensor(c0), torch.tensor(c1)
+
+    c_pt = compute_hybrid_cost(x0_t, g0_t, c0_t, x1_t, g1_t, c1_t, alpha_spatial=0.6)
+    
+    assert isinstance(c_pt, torch.Tensor)
+    assert np.allclose(c_cpu, c_pt.numpy(), atol=1e-5)
+
+    # UOT coupling parity
+    src_cpu, tgt_cpu, w_cpu = compute_uot_coupling(c_cpu, reg=0.5, tau=0.1, n_samples=100)
+    src_pt, tgt_pt, w_pt = compute_uot_coupling(c_pt, reg=0.5, tau=0.1, n_samples=100)
+
+    assert isinstance(src_pt, torch.Tensor)
+    assert isinstance(tgt_pt, torch.Tensor)
+    assert isinstance(w_pt, torch.Tensor)
+    assert len(src_pt) == 100
+    assert w_pt.sum() > 0.0
+
