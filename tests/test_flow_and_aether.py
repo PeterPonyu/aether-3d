@@ -28,10 +28,11 @@ def test_aether_multi_modal_field():
     )
     state = {
         "x": torch.randn(3, 2),
-        "g": torch.randn(3, 8),   # patched gene features
+        "g": torch.randn(3, 32),   # raw gene features
         "c": torch.randn(3, 4),
     }
     t = torch.rand(3)
+
     vel = model(state, t, torch.zeros(3, dtype=torch.long))
     assert "vx" in vel and vel["vx"].shape == (3, 2)
     assert "vg" in vel and vel["vg"].shape[0] == 3

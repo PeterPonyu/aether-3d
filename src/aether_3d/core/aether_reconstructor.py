@@ -174,7 +174,14 @@ class AetherReconstructor:
     def _get_onehot(self, adata, indices):
         """Helper to get one-hot cell classes."""
         labels = adata.obs[self.cfg.label_key].iloc[indices].astype(str).values
-        # Simple mapping for demo (in real code use the label encoder from dataset)
+        if self.dataset is not None and hasattr(self.dataset, "label_encoder"):
+            encoded = self.dataset.label_encoder.transform(labels)
+            n_cls = len(self.dataset.label_encoder.classes_)
+            onehot = np.zeros((len(indices), n_cls), dtype=np.float32)
+            onehot[np.arange(len(indices)), encoded] = 1.0
+            return onehot
+        
+        # Fallback if dataset is not setup
         unique = list(adata.obs[self.cfg.label_key].astype(str).unique())
         mapping = {lab: i for i, lab in enumerate(unique)}
         idxs = [mapping.get(lab, 0) for lab in labels]
