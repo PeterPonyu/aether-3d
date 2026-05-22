@@ -97,9 +97,11 @@ class SerialSliceTrajectoryDataset(Dataset):
             "x0": torch.tensor(x0, dtype=torch.float32),
             "g0": torch.tensor(g0, dtype=torch.float32),
             "c0": torch.tensor(c0, dtype=torch.float32),
-            "z0": torch.tensor(z0, dtype=torch.float32),
+            "z0": torch.tensor([z0], dtype=torch.float32),
             "x1": torch.tensor(x1, dtype=torch.float32),
             "g1": torch.tensor(g1, dtype=torch.float32),
             "c1": torch.tensor(c1, dtype=torch.float32),
-            "z1": torch.tensor(z1, dtype=torch.float32),
+            "z1": torch.tensor([z1], dtype=torch.float32),
+            "delta_z": torch.tensor([z1 - z0], dtype=torch.float32),
         }
+

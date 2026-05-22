@@ -49,24 +49,37 @@ class AetherFlowModule(pl.LightningModule):
         # batch from SerialSliceTrajectoryDataset
         x0, g0, c0 = batch["x0"], batch["g0"], batch["c0"]
         x1, g1, c1 = batch["x1"], batch["g1"], batch["c1"]
+        z0, z1 = batch["z0"], batch["z1"]
+        delta_z = batch["delta_z"]
 
         t = torch.rand(x0.shape[0], device=x0.device) * 0.98 + 0.01
 
-        # Simple linear interpolation for targets (velocity = x1-x0 etc.)
-        target = {
-            "vx": x1 - x0,
-            "vg": g1 - g0,
-            "vc": c1 - c0,
-        }
+        # Interpolate states and get velocity targets using transport path planning
+        _, xt, ux_t = self.transport.path.plan(t, x0, x1)
+        _, gt, ug_t = self.transport.path.plan(t, g0, g1)
+        _, ct, uc_t = self.transport.path.plan(t, c0, c1)
+        _, zt, _ = self.transport.path.plan(t, z0, z1)
 
-        # Current state at t (linear for now)
+        # Simple label tensor placeholder (zeros)
+        y = torch.zeros(x0.shape[0], dtype=torch.long, device=x0.device)
+
+        # Current state dictionary to pass to model
         state = {
-            "x": x0 + t.unsqueeze(1) * (x1 - x0),
-            "g": g0 + t.unsqueeze(1) * (g1 - g0),
-            "c": c0 + t.unsqueeze(1) * (c1 - c0),
+            "x": xt,
+            "g": gt,
+            "c": ct,
+            "z": zt,
+            "delta_z": delta_z,
         }
 
-        pred = self.model(state, t, torch.zeros(x0.shape[0], dtype=torch.long, device=x0.device))  # y placeholder
+        # Predict velocity
+        pred = self.model(state, t, y)
+
+        target = {
+            "vx": ux_t,
+            "vg": ug_t,
+            "vc": uc_t,
+        }
 
         loss, loss_dict = self._compute_multi_modal_loss(pred, target)
         self.log("train_loss", loss, prog_bar=True)

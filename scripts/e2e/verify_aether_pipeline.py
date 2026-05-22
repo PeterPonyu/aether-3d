@@ -48,11 +48,13 @@ def main():
     # Auto-detect real baseline data (MERFISH hypothalamus slices from original DeepSpatial)
     DATA_ROOT = Path(__file__).resolve().parents[3] / "data" / "baselines" / "serial3d_ref" / "merfish_mouse_hypothalamus"
     if DATA_ROOT.exists():
-        h5ads = sorted(DATA_ROOT.glob("*.h5ad"))
+        h5ads = sorted(DATA_ROOT.glob("merfish_*.h5ad"))
         if h5ads:
             print(f"[INFO] Found real DeepSpatial baseline data at {DATA_ROOT}")
             print(f"       Loading {len(h5ads)} real serial slices for E2E verification.\n")
             adatas = [sc.read_h5ad(p) for p in h5ads]
+            for idx, adata in enumerate(adatas):
+                adata.obs["z_coord"] = float(idx * 10.0)
         else:
             print("Baseline folder exists but no .h5ad files found. Falling back to synthetic.")
             adatas, _ = generate_synthetic_slices()
