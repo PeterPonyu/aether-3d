@@ -13,7 +13,7 @@ This report exercises those outputs on two data sources: a synthetic 3-slice tra
 ### wide
 
 - source: `results/benchmark/volumes/wide.h5ad`
-- volume: 972 virtual cells, 32 genes, runtime: 0.9s, device: `cpu (precomputed)`
+- volume: 972 virtual cells, 32 genes, runtime: 1.0s, device: `cpu (precomputed)`
 
 **3D point cloud — cell class**
 
@@ -27,9 +27,9 @@ This report exercises those outputs on two data sources: a synthetic 3-slice tra
 
 [interactive HTML — 11](./synthetic/wide/figures/pointcloud_3d_gene_11.html)
 
-![pointcloud_3d_gene_2.png](./synthetic/wide/figures/pointcloud_3d_gene_2.png)
+![pointcloud_3d_gene_4.png](./synthetic/wide/figures/pointcloud_3d_gene_4.png)
 
-[interactive HTML — 2](./synthetic/wide/figures/pointcloud_3d_gene_2.html)
+[interactive HTML — 4](./synthetic/wide/figures/pointcloud_3d_gene_4.html)
 
 **Orthogonal projections (XY / XZ / YZ)**
 
@@ -47,6 +47,10 @@ This report exercises those outputs on two data sources: a synthetic 3-slice tra
 
 ![input_vs_reconstruction](./synthetic/wide/figures/input_vs_reconstruction.png)
 
+**6-row Z-strata scatter grid** (reconstructed vs nearest input slice)
+
+![multi_z_slice_grid](./synthetic/wide/figures/multi_z_slice_grid.png)
+
 **Top markers along the reconstructed Z axis**
 
 ![gene_trajectory_along_z](./synthetic/wide/figures/gene_trajectory_along_z.png)
@@ -57,12 +61,17 @@ This report exercises those outputs on two data sources: a synthetic 3-slice tra
 
 [interactive HTML mesh](./synthetic/wide/figures/tissue_mesh.html)
 
+**Additional figures (auto-detected on disk)**
+
+![pointcloud_3d_gene_2.png](./synthetic/wide/figures/pointcloud_3d_gene_2.png)
+![pointcloud_3d_gene_27.png](./synthetic/wide/figures/pointcloud_3d_gene_27.png)
+
 ## Real
 
 ### merfish_hypothalamus
 
 - source: `data/baselines/deepspatial/merfish_mouse_hypothalamus/merfish_0.h5ad`
-- volume: 19,200 virtual cells, 155 genes, runtime: 17.9s, device: `cuda`
+- volume: 19,200 virtual cells, 155 genes, runtime: 18.8s, device: `cuda`
 
 **3D point cloud — cell class**
 
@@ -72,13 +81,13 @@ This report exercises those outputs on two data sources: a synthetic 3-slice tra
 
 **3D expression of top markers**
 
-![pointcloud_3d_gene_Syt2.png](./real/merfish_hypothalamus/figures/pointcloud_3d_gene_Syt2.png)
+![pointcloud_3d_gene_Gad1.png](./real/merfish_hypothalamus/figures/pointcloud_3d_gene_Gad1.png)
 
-[interactive HTML — Syt2](./real/merfish_hypothalamus/figures/pointcloud_3d_gene_Syt2.html)
+[interactive HTML — Gad1](./real/merfish_hypothalamus/figures/pointcloud_3d_gene_Gad1.html)
 
-![pointcloud_3d_gene_Irs4.png](./real/merfish_hypothalamus/figures/pointcloud_3d_gene_Irs4.png)
+![pointcloud_3d_gene_Myh11.png](./real/merfish_hypothalamus/figures/pointcloud_3d_gene_Myh11.png)
 
-[interactive HTML — Irs4](./real/merfish_hypothalamus/figures/pointcloud_3d_gene_Irs4.html)
+[interactive HTML — Myh11](./real/merfish_hypothalamus/figures/pointcloud_3d_gene_Myh11.html)
 
 **Orthogonal projections (XY / XZ / YZ)**
 
@@ -96,6 +105,18 @@ This report exercises those outputs on two data sources: a synthetic 3-slice tra
 
 ![input_vs_reconstruction](./real/merfish_hypothalamus/figures/input_vs_reconstruction.png)
 
+**Per-cell-class 3D density similarity** (reconstructed vs input KDE cosine + cell counts)
+
+![density_similarity](./real/merfish_hypothalamus/figures/density_similarity_bars.png)
+
+**Per-gene Moran's I** scatter, reconstructed vs input stack
+
+![morans_i_scatter](./real/merfish_hypothalamus/figures/morans_i_scatter.png)
+
+**6-row Z-strata scatter grid** (reconstructed vs nearest input slice)
+
+![multi_z_slice_grid](./real/merfish_hypothalamus/figures/multi_z_slice_grid.png)
+
 **Top markers along the reconstructed Z axis**
 
 ![gene_trajectory_along_z](./real/merfish_hypothalamus/figures/gene_trajectory_along_z.png)
@@ -105,6 +126,14 @@ This report exercises those outputs on two data sources: a synthetic 3-slice tra
 ![tissue_mesh.png](./real/merfish_hypothalamus/figures/tissue_mesh.png)
 
 [interactive HTML mesh](./real/merfish_hypothalamus/figures/tissue_mesh.html)
+
+**Additional figures (auto-detected on disk)**
+
+![pointcloud_3d_gene_Irs4.png](./real/merfish_hypothalamus/figures/pointcloud_3d_gene_Irs4.png)
+![pointcloud_3d_gene_Mlc1.png](./real/merfish_hypothalamus/figures/pointcloud_3d_gene_Mlc1.png)
+![pointcloud_3d_gene_Pak3.png](./real/merfish_hypothalamus/figures/pointcloud_3d_gene_Pak3.png)
+![pointcloud_3d_gene_Selplg.png](./real/merfish_hypothalamus/figures/pointcloud_3d_gene_Selplg.png)
+![pointcloud_3d_gene_Syt2.png](./real/merfish_hypothalamus/figures/pointcloud_3d_gene_Syt2.png)
 
 ---
 

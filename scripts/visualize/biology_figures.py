@@ -55,6 +55,9 @@ from scripts.visualize._plot_utils import (
     stable_categorical_colors,
     to_dense,
 )
+from scripts.visualize.fig_density_similarity import render_density_similarity
+from scripts.visualize.fig_morans_i_scatter import render_morans_i_scatter
+from scripts.visualize.fig_multi_z_slice_grid import render_multi_z_slice_grid
 
 from aether_3d.config.aether_config import Aether3DConfig
 from aether_3d.core.aether_reconstructor import AetherReconstructor
@@ -525,6 +528,22 @@ def render_figures_for_volume(volume: AnnData, input_slices: Optional[List[AnnDa
     if png_p.exists():
         figures["tissue_mesh"] = {"png": png_p.name, "html": html_p.name if html_p.exists() else None}
 
+    # === Wave 1 ===
+    p = out_dir / "density_similarity_bars.png"
+    render_density_similarity(volume, input_slices or [], p)
+    if p.exists():
+        figures["density_similarity"] = p.name
+
+    p = out_dir / "morans_i_scatter.png"
+    render_morans_i_scatter(volume, input_slices or [], p)
+    if p.exists():
+        figures["morans_i_scatter"] = p.name
+
+    p = out_dir / "multi_z_slice_grid.png"
+    render_multi_z_slice_grid(volume, input_slices, p)
+    if p.exists():
+        figures["multi_z_slice_grid"] = p.name
+
     return figures
 
 
@@ -584,6 +603,9 @@ def write_report(mode_results: Dict[str, Dict[str, Any]], docs_dir: Path) -> Pat
                 ("virtual_slices",           "**Virtual cross-sections at three Z values**"),
                 ("z_class_composition",      "**Cell-class composition along reconstructed Z**"),
                 ("input_vs_reconstruction",  "**Input 2D slices vs continuous Aether3D reconstruction**"),
+                ("density_similarity",       "**Per-cell-class 3D density similarity** (reconstructed vs input KDE cosine + cell counts)"),
+                ("morans_i_scatter",         "**Per-gene Moran's I** scatter, reconstructed vs input stack"),
+                ("multi_z_slice_grid",       "**6-row Z-strata scatter grid** (reconstructed vs nearest input slice)"),
                 ("gene_trajectory_along_z",  "**Top markers along the reconstructed Z axis**"),
             ]:
                 if key in figs:
@@ -599,6 +621,35 @@ def write_report(mode_results: Dict[str, Dict[str, Any]], docs_dir: Path) -> Pat
                 if obj.get("html"):
                     md.append(f"\n[interactive HTML mesh]({link(obj['html'])})")
                 md.append("")
+            # Glob-driven fallback: catch any figure file on disk we did not embed above
+            try:
+                fig_dir_p = (docs_dir / mode / dataset / "figures").resolve()
+                if fig_dir_p.exists():
+                    embedded = set()
+                    for v in figs.values():
+                        if isinstance(v, str):
+                            embedded.add(v)
+                        elif isinstance(v, list):
+                            for item in v:
+                                if isinstance(item, str):
+                                    embedded.add(item)
+                                elif isinstance(item, dict):
+                                    for vv in item.values():
+                                        if isinstance(vv, str):
+                                            embedded.add(vv)
+                        elif isinstance(v, dict):
+                            for vv in v.values():
+                                if isinstance(vv, str):
+                                    embedded.add(vv)
+                    leftover = sorted(p.name for p in fig_dir_p.glob("*.png") if p.name not in embedded)
+                    if leftover:
+                        md.append("**Additional figures (auto-detected on disk)**")
+                        md.append("")
+                        for fn in leftover:
+                            md.append(f"![{fn}]({link(fn)})")
+                        md.append("")
+            except Exception:
+                pass
     md.append("---")
     md.append("")
     md.append("Reproduce with (dl env required for the RTX 5090):")
