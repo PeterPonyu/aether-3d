@@ -58,6 +58,10 @@ from scripts.visualize._plot_utils import (
 from scripts.visualize.fig_density_similarity import render_density_similarity
 from scripts.visualize.fig_morans_i_scatter import render_morans_i_scatter
 from scripts.visualize.fig_multi_z_slice_grid import render_multi_z_slice_grid
+from scripts.visualize.fig_marker_heatmap import render_marker_heatmap
+from scripts.visualize.fig_neighborhood_matrix import render_neighborhood_matrix
+from scripts.visualize.fig_z_density_anchored import render_z_density_anchored
+from scripts.visualize.fig_per_section_proportion import render_per_section_proportion
 
 from aether_3d.config.aether_config import Aether3DConfig
 from aether_3d.core.aether_reconstructor import AetherReconstructor
@@ -544,6 +548,27 @@ def render_figures_for_volume(volume: AnnData, input_slices: Optional[List[AnnDa
     if p.exists():
         figures["multi_z_slice_grid"] = p.name
 
+    # === Wave 2 ===
+    p = out_dir / "marker_heatmap.png"
+    render_marker_heatmap(volume, input_slices or [], p)
+    if p.exists():
+        figures["marker_heatmap"] = p.name
+
+    p = out_dir / "neighborhood_matrix.png"
+    render_neighborhood_matrix(volume, p)
+    if p.exists():
+        figures["neighborhood_matrix"] = p.name
+
+    z_template = str(out_dir / "z_density_anchored_{anchor}.png")
+    rendered = render_z_density_anchored(volume, z_template)
+    if rendered:
+        figures["z_density_anchored"] = rendered
+
+    p = out_dir / "per_section_proportion.png"
+    render_per_section_proportion(volume, input_slices or [], p)
+    if p.exists():
+        figures["per_section_proportion"] = p.name
+
     return figures
 
 
@@ -606,6 +631,10 @@ def write_report(mode_results: Dict[str, Dict[str, Any]], docs_dir: Path) -> Pat
                 ("density_similarity",       "**Per-cell-class 3D density similarity** (reconstructed vs input KDE cosine + cell counts)"),
                 ("morans_i_scatter",         "**Per-gene Moran's I** scatter, reconstructed vs input stack"),
                 ("multi_z_slice_grid",       "**6-row Z-strata scatter grid** (reconstructed vs nearest input slice)"),
+                ("marker_heatmap",           "**Cell-type × marker heatmap** (input stack vs reconstruction)"),
+                ("neighborhood_matrix",      "**3D cellular neighborhood enrichment** (z-scored co-localization, perm test)"),
+                ("z_density_anchored",       "**Z-density anchored on dominant class** (each class within radius of the anchor)"),
+                ("per_section_proportion",   "**Per-section cell-type stacked-bar grid** (inputs vs reconstructed Z-bands)"),
                 ("gene_trajectory_along_z",  "**Top markers along the reconstructed Z axis**"),
             ]:
                 if key in figs:
