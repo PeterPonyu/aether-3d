@@ -38,6 +38,7 @@ dependencies = [
   "pydantic>=2.8",
   "tqdm",
   "einops",
+  "torchdiffeq",
   "timm",
   "pot",  # optional later
 ]
