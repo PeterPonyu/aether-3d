@@ -4,9 +4,12 @@ Proper pytest tests for Aether3D (shared flow + Aether-specific components).
 
 import torch
 import numpy as np
+import anndata as ad
+import pytorch_lightning as pl
 
 from aether_3d.flow import create_flow_transport, LinearPath
 from aether_3d.config.aether_config import Aether3DConfig
+from aether_3d.core.aether_reconstructor import AetherReconstructor
 from aether_3d.models.aether_velocity_field import MultiModalVelocityField
 from aether_3d.coupling.uot import compute_hybrid_cost, compute_uot_coupling
 
@@ -88,3 +91,44 @@ def test_pytorch_uot_and_cost_parity():
     assert len(src_pt) == 100
     assert w_pt.sum() > 0.0
 
+
+def test_aether_reconstructor_fit_runs_one_training_batch(tmp_path):
+    rng = np.random.default_rng(9)
+    adata_list = []
+    for z in (0.0, 1.0):
+        adata = ad.AnnData(
+            X=rng.normal(size=(6, 8)).astype(np.float32),
+            obs={
+                "cell_class": ["T", "B", "T", "B", "T", "B"],
+                "z_coord": [z] * 6,
+            },
+        )
+        adata.obsm["spatial"] = rng.normal(size=(6, 2)).astype(np.float32)
+        adata_list.append(adata)
+
+    cfg = Aether3DConfig(
+        n_samples_base=6,
+        batch_size=2,
+        max_epochs=1,
+        num_workers=0,
+        hidden_size=16,
+        depth=1,
+        num_heads=2,
+        patch_size=4,
+        output_dir=tmp_path,
+    )
+    recon = AetherReconstructor(cfg)
+    recon.setup_data(adata_list)
+    trainer = pl.Trainer(
+        fast_dev_run=1,
+        accelerator="cpu",
+        logger=False,
+        enable_checkpointing=False,
+        enable_model_summary=False,
+    )
+
+    returned = recon.fit(trainer=trainer)
+
+    assert returned is trainer
+    assert trainer.global_step == 1
+    assert recon.module is not None
