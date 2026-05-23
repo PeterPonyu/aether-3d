@@ -4,7 +4,7 @@
       "source": "results/benchmark/volumes/wide.h5ad",
       "n_obs": 972,
       "n_vars": 32,
-      "runtime_s": 2.253596017999371,
+      "runtime_s": 2.6177847209983156,
       "device": "cpu (precomputed)",
       "figures": {
         "pointcloud_3d_class": {
@@ -13,14 +13,14 @@
         },
         "pointcloud_3d_gene": [
           {
+            "gene": "4",
+            "png": "pointcloud_3d_gene_4.png",
+            "html": "pointcloud_3d_gene_4.html"
+          },
+          {
             "gene": "11",
             "png": "pointcloud_3d_gene_11.png",
             "html": "pointcloud_3d_gene_11.html"
-          },
-          {
-            "gene": "27",
-            "png": "pointcloud_3d_gene_27.png",
-            "html": "pointcloud_3d_gene_27.html"
           }
         ],
         "orthogonal_projections": "orthogonal_projections.png",
@@ -34,7 +34,8 @@
         },
         "multi_z_slice_grid": "multi_z_slice_grid.png",
         "neighborhood_matrix": "neighborhood_matrix.png",
-        "z_density_anchored": "z_density_anchored_C0.png"
+        "z_density_anchored": "z_density_anchored_C0.png",
+        "multiplanar_slicing": "multiplanar_slicing.png"
       }
     }
   },
@@ -43,7 +44,7 @@
       "source": "data/baselines/serial3d_ref/merfish_mouse_hypothalamus/merfish_0.h5ad",
       "n_obs": 19200,
       "n_vars": 155,
-      "runtime_s": 14.065283312000247,
+      "runtime_s": 52.51806593500078,
       "device": "cuda",
       "figures": {
         "pointcloud_3d_class": {
@@ -52,14 +53,14 @@
         },
         "pointcloud_3d_gene": [
           {
-            "gene": "Slco1a4",
-            "png": "pointcloud_3d_gene_Slco1a4.png",
-            "html": "pointcloud_3d_gene_Slco1a4.html"
+            "gene": "Gad1",
+            "png": "pointcloud_3d_gene_Gad1.png",
+            "html": "pointcloud_3d_gene_Gad1.html"
           },
           {
-            "gene": "Mlc1",
-            "png": "pointcloud_3d_gene_Mlc1.png",
-            "html": "pointcloud_3d_gene_Mlc1.html"
+            "gene": "Irs4",
+            "png": "pointcloud_3d_gene_Irs4.png",
+            "html": "pointcloud_3d_gene_Irs4.html"
           }
         ],
         "orthogonal_projections": "orthogonal_projections.png",
@@ -76,8 +77,13 @@
         "multi_z_slice_grid": "multi_z_slice_grid.png",
         "marker_heatmap": "marker_heatmap.png",
         "neighborhood_matrix": "neighborhood_matrix.png",
-        "z_density_anchored": "z_density_anchored_C12.png",
-        "per_section_proportion": "per_section_proportion.png"
+        "z_density_anchored": "z_density_anchored_C9.png",
+        "per_section_proportion": "per_section_proportion.png",
+        "recon_vs_25d": "recon_vs_25d.png",
+        "umap_comparison": "umap_comparison.png",
+        "per_region_spearman": "per_region_spearman.png",
+        "celltype_dotplot": "celltype_dotplot.png",
+        "multiplanar_slicing": "multiplanar_slicing.png"
       }
     }
   }

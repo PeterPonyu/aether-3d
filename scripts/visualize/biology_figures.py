@@ -62,6 +62,12 @@ from scripts.visualize.fig_marker_heatmap import render_marker_heatmap
 from scripts.visualize.fig_neighborhood_matrix import render_neighborhood_matrix
 from scripts.visualize.fig_z_density_anchored import render_z_density_anchored
 from scripts.visualize.fig_per_section_proportion import render_per_section_proportion
+from scripts.visualize.fig_recon_vs_25d import render_recon_vs_25d
+from scripts.visualize.fig_umap_comparison import render_umap_comparison
+from scripts.visualize.fig_per_region_spearman import render_per_region_spearman
+from scripts.visualize.fig_celltype_dotplot import render_celltype_dotplot
+from scripts.visualize.fig_multiplanar_slicing import render_multiplanar_slicing
+from scripts.baselines.naive_25d_baseline import stack_naive_25d
 
 from aether_3d.config.aether_config import Aether3DConfig
 from aether_3d.core.aether_reconstructor import AetherReconstructor
@@ -569,6 +575,37 @@ def render_figures_for_volume(volume: AnnData, input_slices: Optional[List[AnnDa
     if p.exists():
         figures["per_section_proportion"] = p.name
 
+    # === Wave 3 ===
+    if input_slices:
+        try:
+            naive_vol = stack_naive_25d(input_slices, num_depths=3, cells_per_depth=1500)
+            p = out_dir / "recon_vs_25d.png"
+            render_recon_vs_25d(input_slices, volume, naive_vol, p)
+            if p.exists():
+                figures["recon_vs_25d"] = p.name
+        except Exception as exc:
+            print(f"[warn] recon_vs_25d skipped: {exc}")
+
+        p = out_dir / "umap_comparison.png"
+        render_umap_comparison(volume, input_slices, p)
+        if p.exists():
+            figures["umap_comparison"] = p.name
+
+        p = out_dir / "per_region_spearman.png"
+        render_per_region_spearman(volume, input_slices, p)
+        if p.exists():
+            figures["per_region_spearman"] = p.name
+
+        p = out_dir / "celltype_dotplot.png"
+        render_celltype_dotplot(volume, input_slices, p)
+        if p.exists():
+            figures["celltype_dotplot"] = p.name
+
+    p = out_dir / "multiplanar_slicing.png"
+    render_multiplanar_slicing(volume, p)
+    if p.exists():
+        figures["multiplanar_slicing"] = p.name
+
     return figures
 
 
@@ -635,6 +672,11 @@ def write_report(mode_results: Dict[str, Dict[str, Any]], docs_dir: Path) -> Pat
                 ("neighborhood_matrix",      "**3D cellular neighborhood enrichment** (z-scored co-localization, perm test)"),
                 ("z_density_anchored",       "**Z-density anchored on dominant class** (each class within radius of the anchor)"),
                 ("per_section_proportion",   "**Per-section cell-type stacked-bar grid** (inputs vs reconstructed Z-bands)"),
+                ("recon_vs_25d",             "**Input vs Aether3D vs naive 2.5D baseline** (XY + XZ projections; baseline is naive identity-preserving lower bound, NOT a published method)"),
+                ("umap_comparison",          "**Joint UMAP** of input vs reconstructed cells"),
+                ("per_region_spearman",      "**Per-region cell-type proportion** Spearman scatter"),
+                ("celltype_dotplot",         "**Cell-class × marker dot plot** (input stack vs reconstruction)"),
+                ("multiplanar_slicing",      "**Multi-planar virtual cross-sections** (coronal / sagittal / horizontal) with class + marker overlay"),
                 ("gene_trajectory_along_z",  "**Top markers along the reconstructed Z axis**"),
             ]:
                 if key in figs:
