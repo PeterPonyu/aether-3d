@@ -13,7 +13,7 @@ This report exercises those outputs on two data sources: a synthetic 3-slice tra
 ### wide
 
 - source: `results/benchmark/volumes/wide.h5ad`
-- volume: 972 virtual cells, 32 genes, runtime: 2.3s, device: `cpu (precomputed)`
+- volume: 972 virtual cells, 32 genes, runtime: 2.6s, device: `cpu (precomputed)`
 
 **3D point cloud — cell class**
 
@@ -23,13 +23,13 @@ This report exercises those outputs on two data sources: a synthetic 3-slice tra
 
 **3D expression of top markers**
 
+![pointcloud_3d_gene_4.png](./synthetic/wide/figures/pointcloud_3d_gene_4.png)
+
+[interactive HTML — 4](./synthetic/wide/figures/pointcloud_3d_gene_4.html)
+
 ![pointcloud_3d_gene_11.png](./synthetic/wide/figures/pointcloud_3d_gene_11.png)
 
 [interactive HTML — 11](./synthetic/wide/figures/pointcloud_3d_gene_11.html)
-
-![pointcloud_3d_gene_27.png](./synthetic/wide/figures/pointcloud_3d_gene_27.png)
-
-[interactive HTML — 27](./synthetic/wide/figures/pointcloud_3d_gene_27.html)
 
 **Orthogonal projections (XY / XZ / YZ)**
 
@@ -59,6 +59,10 @@ This report exercises those outputs on two data sources: a synthetic 3-slice tra
 
 ![z_density_anchored](./synthetic/wide/figures/z_density_anchored_C0.png)
 
+**Multi-planar virtual cross-sections** (coronal / sagittal / horizontal) with class + marker overlay
+
+![multiplanar_slicing](./synthetic/wide/figures/multiplanar_slicing.png)
+
 **Top markers along the reconstructed Z axis**
 
 ![gene_trajectory_along_z](./synthetic/wide/figures/gene_trajectory_along_z.png)
@@ -72,14 +76,14 @@ This report exercises those outputs on two data sources: a synthetic 3-slice tra
 **Additional figures (auto-detected on disk)**
 
 ![pointcloud_3d_gene_2.png](./synthetic/wide/figures/pointcloud_3d_gene_2.png)
-![pointcloud_3d_gene_4.png](./synthetic/wide/figures/pointcloud_3d_gene_4.png)
+![pointcloud_3d_gene_27.png](./synthetic/wide/figures/pointcloud_3d_gene_27.png)
 
 ## Real
 
 ### merfish_hypothalamus
 
 - source: `data/baselines/deepspatial/merfish_mouse_hypothalamus/merfish_0.h5ad`
-- volume: 19,200 virtual cells, 155 genes, runtime: 14.1s, device: `cuda`
+- volume: 19,200 virtual cells, 155 genes, runtime: 52.5s, device: `cuda`
 
 **3D point cloud — cell class**
 
@@ -89,13 +93,13 @@ This report exercises those outputs on two data sources: a synthetic 3-slice tra
 
 **3D expression of top markers**
 
-![pointcloud_3d_gene_Slco1a4.png](./real/merfish_hypothalamus/figures/pointcloud_3d_gene_Slco1a4.png)
+![pointcloud_3d_gene_Gad1.png](./real/merfish_hypothalamus/figures/pointcloud_3d_gene_Gad1.png)
 
-[interactive HTML — Slco1a4](./real/merfish_hypothalamus/figures/pointcloud_3d_gene_Slco1a4.html)
+[interactive HTML — Gad1](./real/merfish_hypothalamus/figures/pointcloud_3d_gene_Gad1.html)
 
-![pointcloud_3d_gene_Mlc1.png](./real/merfish_hypothalamus/figures/pointcloud_3d_gene_Mlc1.png)
+![pointcloud_3d_gene_Irs4.png](./real/merfish_hypothalamus/figures/pointcloud_3d_gene_Irs4.png)
 
-[interactive HTML — Mlc1](./real/merfish_hypothalamus/figures/pointcloud_3d_gene_Mlc1.html)
+[interactive HTML — Irs4](./real/merfish_hypothalamus/figures/pointcloud_3d_gene_Irs4.html)
 
 **Orthogonal projections (XY / XZ / YZ)**
 
@@ -135,11 +139,31 @@ This report exercises those outputs on two data sources: a synthetic 3-slice tra
 
 **Z-density anchored on dominant class** (each class within radius of the anchor)
 
-![z_density_anchored](./real/merfish_hypothalamus/figures/z_density_anchored_C12.png)
+![z_density_anchored](./real/merfish_hypothalamus/figures/z_density_anchored_C9.png)
 
 **Per-section cell-type stacked-bar grid** (inputs vs reconstructed Z-bands)
 
 ![per_section_proportion](./real/merfish_hypothalamus/figures/per_section_proportion.png)
+
+**Input vs Aether3D vs naive 2.5D baseline** (XY + XZ projections; baseline is naive identity-preserving lower bound, NOT a published method)
+
+![recon_vs_25d](./real/merfish_hypothalamus/figures/recon_vs_25d.png)
+
+**Joint UMAP** of input vs reconstructed cells
+
+![umap_comparison](./real/merfish_hypothalamus/figures/umap_comparison.png)
+
+**Per-region cell-type proportion** Spearman scatter
+
+![per_region_spearman](./real/merfish_hypothalamus/figures/per_region_spearman.png)
+
+**Cell-class × marker dot plot** (input stack vs reconstruction)
+
+![celltype_dotplot](./real/merfish_hypothalamus/figures/celltype_dotplot.png)
+
+**Multi-planar virtual cross-sections** (coronal / sagittal / horizontal) with class + marker overlay
+
+![multiplanar_slicing](./real/merfish_hypothalamus/figures/multiplanar_slicing.png)
 
 **Top markers along the reconstructed Z axis**
 
@@ -153,12 +177,13 @@ This report exercises those outputs on two data sources: a synthetic 3-slice tra
 
 **Additional figures (auto-detected on disk)**
 
-![pointcloud_3d_gene_Gad1.png](./real/merfish_hypothalamus/figures/pointcloud_3d_gene_Gad1.png)
-![pointcloud_3d_gene_Irs4.png](./real/merfish_hypothalamus/figures/pointcloud_3d_gene_Irs4.png)
+![pointcloud_3d_gene_Mlc1.png](./real/merfish_hypothalamus/figures/pointcloud_3d_gene_Mlc1.png)
 ![pointcloud_3d_gene_Myh11.png](./real/merfish_hypothalamus/figures/pointcloud_3d_gene_Myh11.png)
 ![pointcloud_3d_gene_Pak3.png](./real/merfish_hypothalamus/figures/pointcloud_3d_gene_Pak3.png)
 ![pointcloud_3d_gene_Selplg.png](./real/merfish_hypothalamus/figures/pointcloud_3d_gene_Selplg.png)
+![pointcloud_3d_gene_Slco1a4.png](./real/merfish_hypothalamus/figures/pointcloud_3d_gene_Slco1a4.png)
 ![pointcloud_3d_gene_Syt2.png](./real/merfish_hypothalamus/figures/pointcloud_3d_gene_Syt2.png)
+![z_density_anchored_C12.png](./real/merfish_hypothalamus/figures/z_density_anchored_C12.png)
 
 ---
 
