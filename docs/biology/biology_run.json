@@ -4,7 +4,7 @@
       "source": "results/benchmark/volumes/wide.h5ad",
       "n_obs": 972,
       "n_vars": 32,
-      "runtime_s": 0.8919727049997164,
+      "runtime_s": 0.9608050820006611,
       "device": "cpu (precomputed)",
       "figures": {
         "pointcloud_3d_class": {
@@ -18,9 +18,9 @@
             "html": "pointcloud_3d_gene_11.html"
           },
           {
-            "gene": "2",
-            "png": "pointcloud_3d_gene_2.png",
-            "html": "pointcloud_3d_gene_2.html"
+            "gene": "4",
+            "png": "pointcloud_3d_gene_4.png",
+            "html": "pointcloud_3d_gene_4.html"
           }
         ],
         "orthogonal_projections": "orthogonal_projections.png",
@@ -31,7 +31,8 @@
         "tissue_mesh": {
           "png": "tissue_mesh.png",
           "html": "tissue_mesh.html"
-        }
+        },
+        "multi_z_slice_grid": "multi_z_slice_grid.png"
       }
     }
   },
@@ -40,7 +41,7 @@
       "source": "data/baselines/serial3d_ref/merfish_mouse_hypothalamus/merfish_0.h5ad",
       "n_obs": 19200,
       "n_vars": 155,
-      "runtime_s": 17.868658542998674,
+      "runtime_s": 18.83882179700049,
       "device": "cuda",
       "figures": {
         "pointcloud_3d_class": {
@@ -49,14 +50,14 @@
         },
         "pointcloud_3d_gene": [
           {
-            "gene": "Syt2",
-            "png": "pointcloud_3d_gene_Syt2.png",
-            "html": "pointcloud_3d_gene_Syt2.html"
+            "gene": "Gad1",
+            "png": "pointcloud_3d_gene_Gad1.png",
+            "html": "pointcloud_3d_gene_Gad1.html"
           },
           {
-            "gene": "Irs4",
-            "png": "pointcloud_3d_gene_Irs4.png",
-            "html": "pointcloud_3d_gene_Irs4.html"
+            "gene": "Myh11",
+            "png": "pointcloud_3d_gene_Myh11.png",
+            "html": "pointcloud_3d_gene_Myh11.html"
           }
         ],
         "orthogonal_projections": "orthogonal_projections.png",
@@ -67,7 +68,10 @@
         "tissue_mesh": {
           "png": "tissue_mesh.png",
           "html": "tissue_mesh.html"
-        }
+        },
+        "density_similarity": "density_similarity_bars.png",
+        "morans_i_scatter": "morans_i_scatter.png",
+        "multi_z_slice_grid": "multi_z_slice_grid.png"
       }
     }
   }
