@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.10"
+        cache: 'pip'
+
+    - name: Install package and test dependencies
+      run: |
+        python -m pip install --upgrade pip
+        # Install without napari[all] in CI environment to avoid heavy GUI dependencies
+        pip install -e ".[dev]"
+        pip install plotly pyvista
+
+    - name: Run tests
+      run: |
+        # Use PYTHONPATH=src so Python finds aether_3d in the src/ directory
+        PYTHONPATH=src pytest

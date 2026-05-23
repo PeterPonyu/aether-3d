@@ -14,10 +14,12 @@ import numpy as np
 import pytorch_lightning as pl
 import scanpy as sc
 import torch
+from torch.utils.data import DataLoader
 
 from ..config.aether_config import Aether3DConfig
 from ..data.trajectory_dataset import SerialSliceTrajectoryDataset
 from ..models.aether_velocity_field import MultiModalVelocityField
+from ..modules.aether_flow_module import AetherFlowModule
 
 
 class AetherReconstructor:
@@ -57,14 +59,30 @@ class AetherReconstructor:
     def fit(self, trainer: pl.Trainer | None = None, **kwargs):
         if self.dataset is None:
             raise RuntimeError("Call setup_data first")
+        model = self.model
+        if model is None:
+            raise RuntimeError("Call setup_data first")
 
-        loader = torch.utils.data.DataLoader(
-            self.dataset, batch_size=self.cfg.batch_size, shuffle=True
+        loader = DataLoader(
+            self.dataset,
+            batch_size=self.cfg.batch_size,
+            shuffle=True,
+            num_workers=self.cfg.num_workers,
         )
 
-        # TODO: create Lightning module + trainer (similar to LuminaFlowModule)
-        print("[AetherReconstructor] fit() skeleton — full Lightning module coming next iteration")
-        # For now just a placeholder so the API is usable
+        self.module = AetherFlowModule(self.cfg, model)
+
+        if trainer is None:
+            trainer = pl.Trainer(
+                max_epochs=self.cfg.max_epochs,
+                default_root_dir=str(self.cfg.output_dir),
+                **kwargs,
+            )
+
+        trainer.fit(self.module, train_dataloaders=loader)
+        self.model = self.module.model
+        self.ema_model = self.module.ema_model
+        return trainer
 
     def reconstruct_continuous_volume(
         self,
@@ -102,24 +120,25 @@ class AetherReconstructor:
             ad1 = adata_list[i + 1]
 
             # Take a subset for speed in verification
-            n0 = min(len(ad0), 2000)
-            idx0 = np.random.choice(len(ad0), n0, replace=False)
+            n0 = len(ad0)
+            n1 = len(ad1)
+            n_cells = min(n0, n1, 2000)
+            idx0 = np.random.choice(len(ad0), n_cells, replace=False)
 
             x0 = torch.tensor(ad0.obsm[self.cfg.spatial_key][idx0], dtype=torch.float32)
             g0 = torch.tensor(np.asarray(ad0.X[idx0]), dtype=torch.float32)
             c0 = torch.tensor(self._get_onehot(ad0, idx0), dtype=torch.float32)
 
             # Simple linear target for the next slice (in real use this would come from UOT pairs)
-            n1 = min(len(ad1), 2000)
-            idx1 = np.random.choice(len(ad1), min(n1, n0), replace=False)
-            x1 = torch.tensor(ad1.obsm[self.cfg.spatial_key][idx1[:n0]], dtype=torch.float32)
-            g1 = torch.tensor(np.asarray(ad1.X[idx1[:n0]]), dtype=torch.float32)
-            c1 = torch.tensor(self._get_onehot(ad1, idx1[:n0]), dtype=torch.float32)
+            idx1 = np.random.choice(len(ad1), n_cells, replace=False)
+            x1 = torch.tensor(ad1.obsm[self.cfg.spatial_key][idx1], dtype=torch.float32)
+            g1 = torch.tensor(np.asarray(ad1.X[idx1]), dtype=torch.float32)
+            c1 = torch.tensor(self._get_onehot(ad1, idx1), dtype=torch.float32)
 
             # For each virtual depth, integrate a few Euler steps using the velocity field
             depths = np.linspace(0, 1, num_depths)
             for d in depths:
-                t = torch.full((n0,), d, dtype=torch.float32)
+                t = torch.full((n_cells,), d, dtype=torch.float32)
                 state = {
                     "x": x0 + d * (x1 - x0),
                     "g": g0 + d * (g1 - g0),
@@ -127,7 +146,7 @@ class AetherReconstructor:
                 }
 
                 with torch.no_grad():
-                    vel = model(state, t, torch.zeros(n0, dtype=torch.long))
+                    vel = model(state, t, torch.zeros(n_cells, dtype=torch.long))
 
                 # Simple Euler update (in real version use proper ODE solver from flow/)
                 dx = vel["vx"] * (thickness / num_depths)
@@ -138,7 +157,7 @@ class AetherReconstructor:
                 new_c = torch.softmax(vel["vc"], dim=-1)
 
                 z_val = z_offset + d * thickness
-                z_arr = np.full((n0, 1), z_val)
+                z_arr = np.full((n_cells, 1), z_val)
 
                 # Build mini AnnData for this virtual layer
                 layer_adata = ad.AnnData(
