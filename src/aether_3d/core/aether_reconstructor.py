@@ -14,10 +14,12 @@ import numpy as np
 import pytorch_lightning as pl
 import scanpy as sc
 import torch
+from torch.utils.data import DataLoader
 
 from ..config.aether_config import Aether3DConfig
 from ..data.trajectory_dataset import SerialSliceTrajectoryDataset
 from ..models.aether_velocity_field import MultiModalVelocityField
+from ..modules.aether_flow_module import AetherFlowModule
 
 
 class AetherReconstructor:
@@ -57,14 +59,30 @@ class AetherReconstructor:
     def fit(self, trainer: pl.Trainer | None = None, **kwargs):
         if self.dataset is None:
             raise RuntimeError("Call setup_data first")
+        model = self.model
+        if model is None:
+            raise RuntimeError("Call setup_data first")
 
-        loader = torch.utils.data.DataLoader(
-            self.dataset, batch_size=self.cfg.batch_size, shuffle=True
+        loader = DataLoader(
+            self.dataset,
+            batch_size=self.cfg.batch_size,
+            shuffle=True,
+            num_workers=self.cfg.num_workers,
         )
 
-        # TODO: create Lightning module + trainer (similar to LuminaFlowModule)
-        print("[AetherReconstructor] fit() skeleton — full Lightning module coming next iteration")
-        # For now just a placeholder so the API is usable
+        self.module = AetherFlowModule(self.cfg, model)
+
+        if trainer is None:
+            trainer = pl.Trainer(
+                max_epochs=self.cfg.max_epochs,
+                default_root_dir=str(self.cfg.output_dir),
+                **kwargs,
+            )
+
+        trainer.fit(self.module, train_dataloaders=loader)
+        self.model = self.module.model
+        self.ema_model = self.module.ema_model
+        return trainer
 
     def reconstruct_continuous_volume(
         self,
