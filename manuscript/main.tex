@@ -68,7 +68,17 @@ system; (ii)~estimating the cellular and molecular state at intermediate
 depths the imager did not capture. Prior art spans alignment-only
 methods, 2.5D virtual-slice interpolators, and continuous-field
 generative models; we cite these as motivation rather than re-using their
-methodology. Aether3D contributes three independent levers: (i)~a uniform
+methodology. Aether3D builds on entropic optimal
+transport~\cite{Cuturi2013Sinkhorn} for slice coupling, flow
+matching~\cite{Lipman2023FlowMatching} for the velocity field, and
+adaptive normalization~\cite{Peebles2023DiT} for conditioning on
+heterogeneous cell-state tokens. Downstream analyses use spatial
+autocorrelation~\cite{Moran1950Autocorrelation}, adjusted Rand
+similarity~\cite{Hubert1985Adjusted}, and persistent-homology
+descriptors~\cite{Edelsbrunner2010PersistentHomology}; the data plumbing
+follows standard single-cell tooling~\cite{Wolf2018Scanpy}.
+
+Aether3D contributes three independent levers: (i)~a uniform
 volume-adapter contract that makes head-to-head comparison audit-safe;
 (ii)~a 7-metric per-virtual-slice quartet (Section~\ref{sec:metrics})
 that exposes geometry, molecular, and topology fidelity in one pass;
