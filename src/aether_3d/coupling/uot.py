@@ -28,15 +28,24 @@ def compute_hybrid_cost(
     g1: np.ndarray | torch.Tensor,
     c1: np.ndarray | torch.Tensor,
     alpha_spatial: float = 0.5,
+    lambda_class: float = 10.0,
 ) -> np.ndarray | torch.Tensor:
     """
     Hybrid cost matrix for UOT between two slices.
 
-    Cost = alpha * spatial_dist + (1-alpha) * gene_cosine_dist + 10 * class_mismatch
+    Cost = alpha_spatial * spatial_dist
+         + (1 - alpha_spatial) * gene_cosine_dist
+         + lambda_class * class_mismatch
+
+    alpha_spatial ∈ [0, 1] trades off spatial vs gene; lambda_class scales the
+    same-cell-type-prior penalty (default 10, retained for backward compat).
+
     Supports both NumPy arrays and PyTorch Tensors.
     """
     if isinstance(x0, torch.Tensor):
-        return compute_hybrid_cost_pytorch(x0, g0, c0, x1, g1, c1, alpha_spatial)
+        return compute_hybrid_cost_pytorch(
+            x0, g0, c0, x1, g1, c1, alpha_spatial, lambda_class
+        )
 
     eps = 1e-9
 
@@ -60,7 +69,7 @@ def compute_hybrid_cost(
     cost_gene = cost_gene / (gmax + eps) if gmax > 0 else cost_gene
 
     # Class penalty (one-hot)
-    cost_class = np.clip(1.0 - np.dot(c0, c1.T), 0, 1) * 10.0
+    cost_class = np.clip(1.0 - np.dot(c0, c1.T), 0, 1) * lambda_class
 
     C = alpha_spatial * cost_spatial + (1 - alpha_spatial) * cost_gene + cost_class
     return C
@@ -74,6 +83,7 @@ def compute_hybrid_cost_pytorch(
     g1: torch.Tensor,
     c1: torch.Tensor,
     alpha_spatial: float = 0.5,
+    lambda_class: float = 10.0,
 ) -> torch.Tensor:
     """
     Compute hybrid cost matrix on PyTorch (supporting GPU acceleration).
@@ -93,7 +103,7 @@ def compute_hybrid_cost_pytorch(
     cost_gene = cost_gene / (gmax + eps) if gmax > 0 else cost_gene
 
     # Class penalty (one-hot overlap)
-    cost_class = torch.clamp(1.0 - torch.matmul(c0, c1.T), 0.0, 1.0) * 10.0
+    cost_class = torch.clamp(1.0 - torch.matmul(c0, c1.T), 0.0, 1.0) * lambda_class
 
     C = alpha_spatial * cost_spatial + (1.0 - alpha_spatial) * cost_gene + cost_class
     return C
