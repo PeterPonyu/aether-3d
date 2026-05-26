@@ -1,0 +1,18 @@
+data_card_id: brca_imc_kuett_2022
+project: Aether3D
+dataset_name: Kuett 2022 3D IMC breast cancer stack
+source_url_or_accession: https://doi.org/10.5281/zenodo.4752030
+license_or_access_constraints: Public Zenodo dataset; verify exact file license before redistributing raw data.
+contact_or_citation: Kuett et al., Three-dimensional imaging mass cytometry for highly multiplexed molecular and cellular mapping of tissues and the tumor microenvironment.
+raw_data_location: data/raw/brca_imc_kuett_2022/
+processed_data_location: data/processed/brca_imc_kuett_2022/
+anndata_schema_name: aether_3d_serial_slice
+preprocessing_command: python scripts/data/prepare_brca_imc_kuett_2022.py --card data/cards/brca_imc_kuett_2022.yaml --manifest-only
+preprocessing_config_path: data/cards/brca_imc_kuett_2022.yaml
+preprocessing_config_hash: pending_until_card_frozen
+split_strategy: virtual_slice_holdout_by_physical_z
+split_seed: 20260526
+created_at_utc: '2026-05-26T08:15:00Z'
+file_size_bytes_or_manifest: zenodo_record_4752030_file_manifest
+content_hash_or_manifest_hash: pending_download_manifest_hash
+derived_figures_or_metrics: [A-F2, A-F4, A-T1]

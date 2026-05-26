@@ -27,3 +27,7 @@ wheels/
 # Results and logs
 results/
 *.log
+
+# Local real-data caches; keep data/cards tracked.
+data/raw/
+data/processed/
