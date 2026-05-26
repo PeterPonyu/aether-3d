@@ -1,0 +1,212 @@
+\documentclass[10pt,letterpaper]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{booktabs}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage[hyphens]{url}
+\usepackage[hidelinks]{hyperref}
+\usepackage{authblk}
+\usepackage{lineno}
+\usepackage{titlesec}
+
+\titleformat{\section}{\bfseries\normalsize}{\thesection}{0.5em}{}
+\titleformat{\subsection}{\bfseries\normalsize\itshape}{\thesubsection}{0.5em}{}
+
+\title{Aether3D: A Reproducible Benchmark Contract for Continuous 3D Spatial-Omics Reconstruction from Serial 2D Sections}
+
+\author[1]{Anonymous Authors}
+\affil[1]{Author affiliations to be added before submission}
+
+\date{\today}
+
+\newcommand{\statusbanner}{%
+  \begin{center}\colorbox{yellow!30}{\parbox{0.9\textwidth}{%
+  \textbf{DRAFT --- SYNTHETIC PLACEHOLDER DATA.} Every numerical result and
+  figure in this manuscript is generated from the synthetic benchmark JSONs
+  under \texttt{aether-3d/results/benchmark/}. No claim has graduated to
+  \emph{paper-ready} status in \texttt{docs/CLAIM\_LEDGER.md}. Real-data
+  promotion is gated by the acceptance matrix.
+  }}\end{center}}
+
+\begin{document}
+\maketitle
+\linenumbers
+\statusbanner
+
+\begin{abstract}
+Serial-section tissue imaging produces discrete 2D slices whose
+inter-section geometry must be reconstructed to enable continuous
+volumetric analysis. We introduce \textbf{Aether3D}, an audit-safe
+benchmark contract that wraps six 3D-reconstruction adapters
+(nearest-slice and linear-interpolation baselines together with four
+external competitors evaluated via shared input/output schemas) under a
+single virtual-slice holdout protocol. Per virtual depth we report a
+seven-metric quartet (Chamfer distance, coordinate RMSE, sliced 2D
+Wasserstein, Moran's I agreement, domain ARI/NMI, cell-type proportion
+Spearman) augmented by topology and vector-field metrics (Betti-0
+stability, flow-divergence, velocity anisotropy). An $(\alpha_{\text{spatial}}
+\times \lambda_{\text{class}})$ ablation grid quantifies the contribution of each
+component of the hybrid coupling cost, and a hardware-honest scaling
+harness records per-measurement device, CUDA version, runtime, and peak
+GPU memory. \emph{All results in this draft are computed from synthetic
+placeholder data; real-data promotion is gated by the project claim
+ledger.}
+\end{abstract}
+
+\section{Introduction}
+\label{sec:intro}
+
+Three-dimensional tissue context cannot be recovered from 2D imaging
+without an explicit reconstruction step that addresses two coupled
+problems: (i)~aligning discrete sections in a shared 3D coordinate
+system; (ii)~estimating the cellular and molecular state at intermediate
+depths the imager did not capture. Prior art spans alignment-only
+methods, 2.5D virtual-slice interpolators, and continuous-field
+generative models; we cite these as motivation rather than re-using their
+methodology. Aether3D contributes three independent levers: (i)~a uniform
+volume-adapter contract that makes head-to-head comparison audit-safe;
+(ii)~a 7-metric per-virtual-slice quartet (Section~\ref{sec:metrics})
+that exposes geometry, molecular, and topology fidelity in one pass;
+(iii)~an explicit $\lambda_{\text{class}}$ knob with a reproducible ablation
+grid that justifies prior hard-coded defaults.
+
+Per the project audit boundary, no prose, class name, or figure layout
+from any prior 3D reconstruction work is reused; the leakage scanner
+enforces this.
+
+\section{Method}
+\label{sec:method}
+
+\subsection{Volume-adapter contract}
+\label{sec:contract}
+
+Each method we compare implements a uniform \texttt{VolumeBaseAdapter}
+subclassing pattern. The visible input is a list of AnnData slices with
+\texttt{.obsm["spatial"]} 2D coords and a per-slice physical-$z$ value;
+held-out slices are removed from the adapter-visible input before any
+call. Per-result provenance records device, runtime, peak memory, torch
+version, CUDA version, hostname, and git SHA.
+
+\subsection{Hybrid UOT coupling}
+\label{sec:uot}
+
+The cell-to-cell coupling cost between adjacent slices combines spatial
+distance, gene cosine distance, and a same-cell-type prior:
+\[
+  C_{ij} = \alpha_{\text{spatial}} \, D^{\text{spat}}_{ij}
+         + (1 - \alpha_{\text{spatial}}) \, D^{\text{gene}}_{ij}
+         + \lambda_{\text{class}} \, P^{\text{cell}}_{ij}.
+\]
+Both $\alpha_{\text{spatial}} \in [0, 1]$ and $\lambda_{\text{class}} \in
+[0, \infty)$ are explicit configuration parameters (no hard-coded
+defaults shipped). The $(\alpha, \lambda)$ ablation grid in
+Section~\ref{sec:res-ablation} quantifies the contribution of each
+component.
+
+\subsection{Metric quartet + topology}
+\label{sec:metrics}
+
+For each held-out virtual depth $z_t$ the reconstructed cells are
+compared against the truth slice at that depth on seven metrics:
+Chamfer distance and coordinate RMSE (geometry), sliced 2D Wasserstein
+(distributional geometry), Moran's I agreement on top-$K$ HVGs
+(molecular continuity), domain ARI/NMI via KMeans on the latent
+(cluster identity), cell-type proportion Spearman (identity composition),
+and Betti-0 stability via kNN union-find (topology).
+
+\section{Results}
+\label{sec:results}
+
+\subsection{Virtual-slice holdout (synthetic placeholder)}
+\label{sec:res-holdout}
+
+Figure~\ref{fig:holdout} reports the geometry quartet for two
+always-available baselines (nearest-slice, linear-interp) on a synthetic
+5-slice stack with the middle slice held out. Nearest-slice attains
+lower Chamfer distance and lower sliced 2D Wasserstein than linear
+interpolation at this noise level, a result that is interpretable rather
+than headline-worthy: with $\sigma_{\text{spatial}} = 1.0$ the nearest
+neighbor is closer to the truth than the linear blend of two flanking
+slices. \emph{Numbers in this figure are synthetic placeholders; real-data
+figures will replace them once a serial-section dataset graduates.}
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\textwidth]{figures/fig_holdout_quartet.pdf}
+  \caption{Virtual-slice holdout: 7-metric quartet for the two
+  always-available baselines on a synthetic 5-slice stack with the
+  middle slice held out. Source:
+  \texttt{aether-3d/results/benchmark/synthetic\_holdout.json}.}
+  \label{fig:holdout}
+\end{figure}
+
+\subsection{UOT-cost component ablation}
+\label{sec:res-ablation}
+
+The $(\alpha_{\text{spatial}} \times \lambda_{\text{class}})$ grid in
+Figure~\ref{fig:ablation} confirms that on synthetic data the class
+penalty $\lambda_{\text{class}}$ dominates: lifting $\lambda$ from 0 to 10
+raises top-1 coupling accuracy from $\sim$0.45 to $\sim$0.87--0.90 at every
+$\alpha$ tested, while further increases to $\lambda = 100$ saturate. This
+interpretable mechanism finding strengthens any default-justification
+prose without overstating biology.
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\textwidth]{figures/fig_uot_ablation.pdf}
+  \caption{$(\alpha_{\text{spatial}} \times \lambda_{\text{class}})$ ablation
+  on synthetic data. (a) Top-1 coupling accuracy. (b) Mean true-pair
+  mass. Source: \texttt{aether-3d/results/benchmark/uot\_ablation.json}.}
+  \label{fig:ablation}
+\end{figure}
+
+\subsection{Hardware-honest scaling}
+\label{sec:res-scaling}
+
+The scaling harness records device, torch version, CUDA version, peak
+memory, runtime, and git SHA per measurement.
+Figure~\ref{fig:scaling} reports runtime as a function of cells per
+slice. For NumPy-only baselines (nearest-slice, linear-interp) peak GPU
+memory is zero (no CUDA allocations); a future torch-using adapter wired
+through the contract will produce nonzero memory under the
+\texttt{dl}-style env and fail loudly on incompatible CUDA stacks.
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\textwidth]{figures/fig_scaling_curve.pdf}
+  \caption{Scaling curve on synthetic stacks. (a) Runtime vs cells per
+  slice. (b) Provenance per measurement (device + CUDA version).
+  Source: \texttt{aether-3d/results/benchmark/scaling\_curve.json}.}
+  \label{fig:scaling}
+\end{figure}
+
+\section{Discussion}
+\label{sec:discussion}
+
+Aether3D in its present synthetic-evaluation form is not a claim of
+biological superiority over any prior 3D reconstruction method. The
+audit boundary requires that every promotion of a claim from
+\texttt{validated-small} or \texttt{blocked} to \texttt{paper-ready} be
+backed by real-data evidence linked from \texttt{docs/CLAIM\_LEDGER.md}.
+The deliverables present today are: (i)~a uniform volume-adapter
+contract that catches audit regressions mechanically; (ii)~the 7-metric
+per-virtual-slice quartet plus topology; (iii)~an interpretable UOT-cost
+component ablation; (iv)~a hardware-honest scaling harness that fails
+fast when the running torch cannot launch kernels on the visible GPU.
+
+\section*{Data and code availability}
+
+Source code, tests, and the benchmark contract live in the Aether3D
+package. Synthetic placeholder data is produced deterministically by
+\texttt{scripts/data/prepare\_synthetic\_aether.py}; the data card schema
+and reproducibility metadata helper are documented in the package.
+
+\bibliographystyle{plain}
+\bibliography{refs}
+
+\end{document}
