@@ -46,10 +46,39 @@ def _annotate_placeholder(ax) -> None:
     )
 
 
+def _bold_panel_label(ax, letter: str) -> None:
+    """Bold lowercase panel label at top-left.
+
+    Mirrors `docs/REFERENCE_FIGURE_STYLE.md`.
+    """
+    ax.text(
+        -0.10, 1.05, letter,
+        transform=ax.transAxes,
+        ha="left", va="bottom",
+        fontsize=12, fontweight="bold",
+    )
+
+
+def _stamp_provenance(fig, source_path: Path, data_card_id: str | None) -> None:
+    """Foot-of-figure provenance stamp."""
+    try:
+        rel = source_path.relative_to(PROJECT_ROOT)
+    except ValueError:
+        rel = source_path
+    card = f"  ·  data_card_id={data_card_id}" if data_card_id else ""
+    fig.text(
+        0.99, 0.005,
+        f"source: {rel}{card}",
+        ha="right", va="bottom",
+        fontsize=5.5, style="italic", color="dimgrey",
+        family="monospace",
+    )
+
+
 # -- Figure 1: virtual-slice holdout 7-metric quartet --------------------
 
 
-def compose_holdout(holdout: dict, out_path: Path) -> None:
+def compose_holdout(holdout: dict, out_path: Path, source_path: Path, data_card_id: str | None = None) -> None:
     holdouts = holdout["holdouts"]
     key = next(iter(holdouts))
     methods = holdouts[key]
@@ -94,7 +123,8 @@ def compose_holdout(holdout: dict, out_path: Path) -> None:
             for x, (_, v) in zip(xs, vals):
                 ax.text(x, v, f"{v:.3f}", ha="center", va="bottom", fontsize=7)
             ax.set_ylabel(mlabel)
-        ax.set_title(f"({chr(ord('a') + mi)}) {mlabel}", fontsize=10)
+        _bold_panel_label(ax, chr(ord('a') + mi))
+        ax.set_title(mlabel, fontsize=10)
         ax.grid(axis="y", linestyle=":", alpha=0.5)
         _annotate_placeholder(ax)
 
@@ -102,6 +132,7 @@ def compose_holdout(holdout: dict, out_path: Path) -> None:
         "Virtual-slice holdout — 7-metric quartet (synthetic 5-slice stack, middle slice held out)",
         fontsize=11, y=0.99,
     )
+    _stamp_provenance(fig, source_path, data_card_id)
     fig.savefig(out_path, bbox_inches="tight")
     plt.close(fig)
     print(f"[compose] {out_path.relative_to(PROJECT_ROOT)}")
@@ -110,7 +141,7 @@ def compose_holdout(holdout: dict, out_path: Path) -> None:
 # -- Figure 2: UOT ablation heatmap -------------------------------------
 
 
-def compose_uot_ablation(ablation: dict, out_path: Path) -> None:
+def compose_uot_ablation(ablation: dict, out_path: Path, source_path: Path, data_card_id: str | None = None) -> None:
     results = ablation["results"]
     alphas = sorted({r["point"]["alpha_spatial"] for r in results})
     lambdas = sorted({r["point"]["lambda_class"] for r in results})
@@ -127,12 +158,13 @@ def compose_uot_ablation(ablation: dict, out_path: Path) -> None:
     gs = fig.add_gridspec(1, 2, wspace=0.32)
 
     for pi, (mat, label) in enumerate([
-        (top1, "(a) top-1 coupling accuracy ↑"),
-        (mass, "(b) mean true-pair mass ↑"),
+        (top1, "top-1 coupling accuracy ↑"),
+        (mass, "mean true-pair mass ↑"),
     ]):
         ax = fig.add_subplot(gs[0, pi])
         im = ax.imshow(mat, aspect="auto", origin="lower",
                        cmap="viridis", vmin=0, vmax=1)
+        _bold_panel_label(ax, chr(ord('a') + pi))
         ax.set_xticks(np.arange(len(lambdas)))
         ax.set_xticklabels([f"{l:g}" for l in lambdas])
         ax.set_yticks(np.arange(len(alphas)))
@@ -151,6 +183,7 @@ def compose_uot_ablation(ablation: dict, out_path: Path) -> None:
     fig.suptitle(r"UOT-cost component ablation: $\alpha_{\mathrm{spatial}} \times \lambda_{\mathrm{class}}$",
                  fontsize=11, y=1.02)
     fig.tight_layout()
+    _stamp_provenance(fig, source_path, data_card_id)
     fig.savefig(out_path, bbox_inches="tight")
     plt.close(fig)
     print(f"[compose] {out_path.relative_to(PROJECT_ROOT)}")
@@ -159,7 +192,7 @@ def compose_uot_ablation(ablation: dict, out_path: Path) -> None:
 # -- Figure 3: scaling curve --------------------------------------------
 
 
-def compose_scaling(scaling: dict, out_path: Path) -> None:
+def compose_scaling(scaling: dict, out_path: Path, source_path: Path, data_card_id: str | None = None) -> None:
     results = scaling["results"]
 
     fig = plt.figure(figsize=(12, 4.5))
@@ -179,7 +212,8 @@ def compose_scaling(scaling: dict, out_path: Path) -> None:
         ax_a.plot(xs, ys, marker="o", label=ad)
     ax_a.set_xlabel("cells per slice")
     ax_a.set_ylabel("runtime (s)")
-    ax_a.set_title("(a) Runtime vs synthetic stack size")
+    _bold_panel_label(ax_a, "a")
+    ax_a.set_title("Runtime vs synthetic stack size", fontsize=10)
     ax_a.set_xscale("log")
     ax_a.set_yscale("log")
     ax_a.legend(fontsize=8)
@@ -209,32 +243,60 @@ def compose_scaling(scaling: dict, out_path: Path) -> None:
             ax_b.text(0.0, 0.95 - i * 0.07, line,
                       transform=ax_b.transAxes, family="monospace",
                       fontsize=9, va="top")
-        ax_b.set_title("(b) Reproducibility provenance")
+        _bold_panel_label(ax_b, "b")
+        ax_b.set_title("Reproducibility provenance", fontsize=10)
         _annotate_placeholder(ax_b)
 
     fig.suptitle("Hardware-honest scaling on synthetic stacks",
                  fontsize=11, y=1.02)
     fig.tight_layout()
+    _stamp_provenance(fig, source_path, data_card_id)
     fig.savefig(out_path, bbox_inches="tight")
     plt.close(fig)
     print(f"[compose] {out_path.relative_to(PROJECT_ROOT)}")
 
 
 def main() -> int:
+    import argparse
+
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--holdout-json", type=Path,
+        default=BENCH_DIR / "synthetic_holdout.json",
+        help="Benchmark JSON for the virtual-slice holdout figure.",
+    )
+    parser.add_argument(
+        "--ablation-json", type=Path,
+        default=BENCH_DIR / "uot_ablation.json",
+        help="Benchmark JSON for the UOT-cost ablation figure.",
+    )
+    parser.add_argument(
+        "--scaling-json", type=Path,
+        default=BENCH_DIR / "scaling_curve.json",
+        help="Benchmark JSON for the scaling curve figure.",
+    )
+    parser.add_argument(
+        "--data-card-id", type=str, default=None,
+        help="Optional data card id stamped on every figure's provenance footer.",
+    )
+    args = parser.parse_args()
+
     print(f"[compose] benchmark dir: {BENCH_DIR}")
     print(f"[compose] figures out:   {FIG_DIR}")
+    if args.data_card_id:
+        print(f"[compose] data_card_id:  {args.data_card_id}")
 
-    holdout = _load_or_warn(BENCH_DIR / "synthetic_holdout.json")
+    holdout = _load_or_warn(args.holdout_json)
     if holdout:
-        compose_holdout(holdout, FIG_DIR / "fig_holdout_quartet.pdf")
+        compose_holdout(holdout, FIG_DIR / "fig_holdout_quartet.pdf", args.holdout_json, args.data_card_id)
 
-    ablation = _load_or_warn(BENCH_DIR / "uot_ablation.json")
+    ablation = _load_or_warn(args.ablation_json)
     if ablation:
-        compose_uot_ablation(ablation, FIG_DIR / "fig_uot_ablation.pdf")
+        compose_uot_ablation(ablation, FIG_DIR / "fig_uot_ablation.pdf", args.ablation_json, args.data_card_id)
 
-    scaling = _load_or_warn(BENCH_DIR / "scaling_curve.json")
+    scaling = _load_or_warn(args.scaling_json)
     if scaling:
-        compose_scaling(scaling, FIG_DIR / "fig_scaling_curve.pdf")
+        compose_scaling(scaling, FIG_DIR / "fig_scaling_curve.pdf", args.scaling_json, args.data_card_id)
 
     print("[compose] all figures composed")
     return 0
