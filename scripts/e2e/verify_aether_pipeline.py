@@ -5,8 +5,8 @@ Deep verification script for Aether3D (mirrors LuminaST's verify script).
 - Generates synthetic serial 2D slices with spatial + gene + cell class
 - Builds UOT trajectory dataset
 - Instantiates MultiModalVelocityField + AetherFlowModule
-- Runs a few training steps
-- Calls reconstruct_continuous_volume and validates output
+- Skips training in the bounded smoke path; pytest covers the training-batch path
+- Calls reconstruct_continuous_volume and exits nonzero if required output checks fail
 """
 
 import argparse
@@ -14,8 +14,6 @@ from pathlib import Path
 import numpy as np
 import scanpy as sc
 import pandas as pd
-import torch
-
 from aether_3d.config.aether_config import Aether3DConfig
 from aether_3d.data.trajectory_dataset import SerialSliceTrajectoryDataset
 from aether_3d.models.aether_velocity_field import MultiModalVelocityField
@@ -36,30 +34,60 @@ def generate_synthetic_slices(n_slices=3, cells_per_slice=800, n_genes=64, n_cla
         ad = sc.AnnData(X=expr)
         ad.obsm["spatial"] = xy
         ad.obs["cell_class"] = pd.Categorical(labels)
-        ad.obs["z_coord"] = float(s) * 10.0   # physical Z
+        ad.obs["z_coord"] = float(s) * 10.0  # physical Z
         adatas.append(ad)
 
     return adatas, cancer_names
 
 
 def main():
+    parser = argparse.ArgumentParser(
+        description="Run the Aether3D synthetic smoke pipeline."
+    )
+    parser.add_argument(
+        "--use-real-baseline",
+        action="store_true",
+        help=(
+            "Opt into local DeepSpatial baseline h5ad files when present. The default is synthetic "
+            "data so CI/smoke runs stay bounded and avoid very large UOT category counts."
+        ),
+    )
+    args = parser.parse_args()
+
     print("=== Deep Aether3D Pipeline Verification ===")
 
     # Auto-detect real baseline data (MERFISH hypothalamus slices from original DeepSpatial)
-    DATA_ROOT = Path(__file__).resolve().parents[3] / "data" / "baselines" / "serial3d_ref" / "merfish_mouse_hypothalamus"
-    if DATA_ROOT.exists():
+    DATA_ROOT = (
+        Path(__file__).resolve().parents[3]
+        / "data"
+        / "baselines"
+        / "serial3d_ref"
+        / "merfish_mouse_hypothalamus"
+    )
+    if args.use_real_baseline and DATA_ROOT.exists():
         h5ads = sorted(DATA_ROOT.glob("merfish_*.h5ad"))
         if h5ads:
             print(f"[INFO] Found real DeepSpatial baseline data at {DATA_ROOT}")
-            print(f"       Loading {len(h5ads)} real serial slices for E2E verification.\n")
+            print(
+                f"       Loading {len(h5ads)} real serial slices for E2E verification.\n"
+            )
             adatas = [sc.read_h5ad(p) for p in h5ads]
             for idx, adata in enumerate(adatas):
                 adata.obs["z_coord"] = float(idx * 10.0)
         else:
-            print("Baseline folder exists but no .h5ad files found. Falling back to synthetic.")
+            print(
+                "Baseline folder exists but no .h5ad files found. Falling back to synthetic."
+            )
             adatas, _ = generate_synthetic_slices()
     else:
-        print("No real baseline data found locally. Using improved synthetic serial slices.\n")
+        if DATA_ROOT.exists():
+            print(
+                "Real baseline data found locally, but synthetic smoke is the default. Use --use-real-baseline to opt in.\n"
+            )
+        else:
+            print(
+                "No real baseline data found locally. Using improved synthetic serial slices.\n"
+            )
         adatas, _ = generate_synthetic_slices()
 
     cfg = Aether3DConfig(
@@ -84,11 +112,13 @@ def main():
         depth=2,
     )
 
-    module = AetherFlowModule(cfg, model)
+    _module = AetherFlowModule(cfg, model)
 
     # Training skipped in this lightweight verification to avoid shape mismatches in demo model.
     # The architecture (model + module + dataset) is already validated by pytest.
-    print("Skipping full training in lightweight verification (pytest covers the model).")
+    print(
+        "Skipping full training in lightweight verification (pytest covers the model)."
+    )
 
     # Reconstruction
     recon = AetherReconstructor(cfg)
@@ -98,15 +128,27 @@ def main():
 
     volume = recon.reconstruct_continuous_volume(adatas, thickness=10.0, num_depths=4)
 
-    print(f"\nReconstructed 3D volume:")
+    print("\nReconstructed 3D volume:")
     print(f"  Cells: {volume.n_obs}")
-    print(f"  Has spatial_3d: {'spatial_3d' in volume.obsm}")
-    print(f"  Has z_3d: {'z_3d' in volume.obs.columns}")
-    print(f"  All finite in spatial_3d: {np.isfinite(volume.obsm['spatial_3d']).all()}")
+    has_spatial_3d = "spatial_3d" in volume.obsm
+    has_z_3d = "z_3d" in volume.obs.columns
+    finite_spatial_3d = has_spatial_3d and np.isfinite(volume.obsm["spatial_3d"]).all()
+    expected_nonempty = volume.n_obs > 0 and volume.n_vars > 0
 
-    print("\n✅ Aether3D deep pipeline verification PASSED")
-    return True
+    print(f"  Has spatial_3d: {has_spatial_3d}")
+    print(f"  Has z_3d: {has_z_3d}")
+    print(f"  All finite in spatial_3d: {finite_spatial_3d}")
+    print(f"  Non-empty volume matrix: {expected_nonempty}")
+
+    success = bool(
+        has_spatial_3d and has_z_3d and finite_spatial_3d and expected_nonempty
+    )
+    if success:
+        print("\n✅ Aether3D bounded reconstruction smoke PASSED")
+    else:
+        print("\n❌ Aether3D bounded reconstruction smoke FAILED")
+    return success
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(0 if main() else 1)

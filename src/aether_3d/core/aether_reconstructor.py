@@ -20,6 +20,8 @@ from ..config.aether_config import Aether3DConfig
 from ..data.trajectory_dataset import SerialSliceTrajectoryDataset
 from ..models.aether_velocity_field import MultiModalVelocityField
 from ..modules.aether_flow_module import AetherFlowModule
+from ..coupling.uot import compute_hybrid_cost, compute_uot_coupling
+from ..flow.integrators import ode
 
 
 class AetherReconstructor:
@@ -94,20 +96,28 @@ class AetherReconstructor:
         """
         Functional 3D reconstruction using the multi-modal velocity field.
 
+        Uses UOT-based cell pairing (hybrid cost: spatial + gene cosine + class),
+        density-preserving inverse transform sampling, and ODE integration via torchdiffeq.
+
         For each pair of adjacent slices:
-        - Sample many virtual cells
-        - Integrate the velocity field with simple Euler steps across depths
+        - Pair cells across slices via unbalanced optimal transport
+        - Sample virtual cells at each depth proportional to interpolated slice density
+        - Integrate the velocity field with adaptive ODE solver (dopri5)
         - Predict gene expression velocity and cell class velocity
         - Assemble into a dense 3D AnnData volume
         """
         if self.model is None:
-            raise RuntimeError("Call setup_data first. Training/fit is recommended but not strictly required for demo.")
+            raise RuntimeError(
+                "Call setup_data first. Training/fit is recommended but not strictly required for demo."
+            )
 
         thickness = thickness or self.cfg.thickness
         n_samples = n_samples or self.cfg.n_samples_volume
 
-        print(f"[AetherReconstructor] Building continuous 3D volume "
-              f"(thickness={thickness}, samples_per_pair~{n_samples}, depths={num_depths})...")
+        print(
+            f"[AetherReconstructor] Building continuous 3D volume "
+            f"(thickness={thickness}, samples_per_pair~{n_samples}, depths={num_depths})..."
+        )
 
         all_cells = []
         z_offset = 0.0
@@ -119,45 +129,96 @@ class AetherReconstructor:
             ad0 = adata_list[i]
             ad1 = adata_list[i + 1]
 
-            # Take a subset for speed in verification
             n0 = len(ad0)
             n1 = len(ad1)
-            n_cells = min(n0, n1, 2000)
-            idx0 = np.random.choice(len(ad0), n_cells, replace=False)
 
-            x0 = torch.tensor(ad0.obsm[self.cfg.spatial_key][idx0], dtype=torch.float32)
-            g0 = torch.tensor(np.asarray(ad0.X[idx0]), dtype=torch.float32)
-            c0 = torch.tensor(self._get_onehot(ad0, idx0), dtype=torch.float32)
+            # Collect all cells from both slices for UOT pairing
+            idx_all0 = np.arange(n0)
+            idx_all1 = np.arange(n1)
 
-            # Simple linear target for the next slice (in real use this would come from UOT pairs)
-            idx1 = np.random.choice(len(ad1), n_cells, replace=False)
-            x1 = torch.tensor(ad1.obsm[self.cfg.spatial_key][idx1], dtype=torch.float32)
-            g1 = torch.tensor(np.asarray(ad1.X[idx1]), dtype=torch.float32)
-            c1 = torch.tensor(self._get_onehot(ad1, idx1), dtype=torch.float32)
+            x0_all = torch.tensor(ad0.obsm[self.cfg.spatial_key], dtype=torch.float32)
+            g0_all = torch.tensor(np.asarray(ad0.X), dtype=torch.float32)
+            c0_all = torch.tensor(self._get_onehot(ad0, idx_all0), dtype=torch.float32)
 
-            # For each virtual depth, integrate a few Euler steps using the velocity field
+            x1_all = torch.tensor(ad1.obsm[self.cfg.spatial_key], dtype=torch.float32)
+            g1_all = torch.tensor(np.asarray(ad1.X), dtype=torch.float32)
+            c1_all = torch.tensor(self._get_onehot(ad1, idx_all1), dtype=torch.float32)
+
+            # UOT-based cell pairing: hybrid cost (spatial + gene cosine + class)
+            cost = compute_hybrid_cost(x0_all, g0_all, c0_all, x1_all, g1_all, c1_all)
+            src_idx, tgt_idx, weights = compute_uot_coupling(cost, n_samples=n_samples)
+
+            # Convert to numpy for sampling (handles both torch.Tensor and np.ndarray)
+            src_np = (
+                src_idx.cpu().numpy() if isinstance(src_idx, torch.Tensor) else src_idx
+            )
+            w_np = (
+                weights.cpu().numpy() if isinstance(weights, torch.Tensor) else weights
+            )
+            w_np = w_np / max(w_np.sum(), 1e-12)  # normalize
+
+            spatial_dim = x0_all.shape[1]
+            gene_dim = g0_all.shape[1]
+
+            n_available = len(src_np)
+
+            # ODE drift factory: wraps the velocity field as dx/dt = v(state, t, y)
+            def make_drift(ys_cond):
+                def drift_fn(concat_state, t_vals):
+                    x_part = concat_state[:, :spatial_dim]
+                    g_part = concat_state[:, spatial_dim : spatial_dim + gene_dim]
+                    c_part = concat_state[:, spatial_dim + gene_dim :]
+                    state = {"x": x_part, "g": g_part, "c": c_part}
+                    with torch.no_grad():
+                        vel = model(state, t_vals, ys_cond)
+                    return torch.cat([vel["vx"], vel["vg"], vel["vc"]], dim=1)
+
+                return drift_fn
+
+            # For each virtual depth, integrate the ODE and sample proportionally
             depths = np.linspace(0, 1, num_depths)
             for d in depths:
-                t = torch.full((n_cells,), d, dtype=torch.float32)
-                state = {
-                    "x": x0 + d * (x1 - x0),
-                    "g": g0 + d * (g1 - g0),
-                    "c": c0 + d * (c1 - c0),
-                }
+                # Density-preserving inverse transform sampling:
+                # interpolate cell count between slices, then sample weighted by UOT
+                n_virtual = int(np.round(n0 + d * (n1 - n0)))
+                n_virtual = max(n_virtual, 1)
 
-                with torch.no_grad():
-                    vel = model(state, t, torch.zeros(n_cells, dtype=torch.long))
+                if n_virtual <= n_available:
+                    chosen = np.random.choice(
+                        n_available, n_virtual, replace=False, p=w_np
+                    )
+                else:
+                    chosen = np.random.choice(
+                        n_available, n_virtual, replace=True, p=w_np
+                    )
 
-                # Simple Euler update (in real version use proper ODE solver from flow/)
-                dx = vel["vx"] * (thickness / num_depths)
-                dg = vel["vg"] * (thickness / num_depths)
+                s0 = src_np[chosen]
+                x_start = x0_all[s0]
+                g_start = g0_all[s0]
+                c_start = c0_all[s0]
 
-                new_x = state["x"] + dx
-                new_g = state["g"] + dg
-                new_c = torch.softmax(vel["vc"], dim=-1)
+                n_current = x_start.shape[0]
+                ys = torch.zeros(n_current, dtype=torch.long)
+
+                # ODE integration from t=0 to t=d using adaptive dopri5 solver
+                concat_start = torch.cat([x_start, g_start, c_start], dim=1)
+                if d > 0:
+                    integrator = ode(
+                        drift=make_drift(ys),
+                        t0=0.0,
+                        t1=float(d),
+                        solver_type="dopri5",
+                    )
+                    concat_end = integrator(concat_start)
+                else:
+                    concat_end = concat_start  # depth 0: identity (source slice)
+
+                new_x = concat_end[:, :spatial_dim]
+                new_g = concat_end[:, spatial_dim : spatial_dim + gene_dim]
+                new_c = torch.softmax(concat_end[:, spatial_dim + gene_dim :], dim=-1)
 
                 z_val = z_offset + d * thickness
-                z_arr = np.full((n_cells, 1), z_val)
+                z_arr = np.full((n_current, 1), z_val)
 
                 # Build mini AnnData for this virtual layer
                 layer_adata = ad.AnnData(
@@ -187,7 +248,9 @@ class AetherReconstructor:
         keep = (z >= z_min) & (z <= z_max)
         volume = volume[keep].copy()
 
-        print(f"  Reconstructed volume has {volume.n_obs} virtual cells across {len(adata_list)-1} intervals.")
+        print(
+            f"  Reconstructed volume has {volume.n_obs} virtual cells across {len(adata_list) - 1} intervals."
+        )
         return volume
 
     def _get_onehot(self, adata, indices):
@@ -199,7 +262,7 @@ class AetherReconstructor:
             onehot = np.zeros((len(indices), n_cls), dtype=np.float32)
             onehot[np.arange(len(indices)), encoded] = 1.0
             return onehot
-        
+
         # Fallback if dataset is not setup
         unique = list(adata.obs[self.cfg.label_key].astype(str).unique())
         mapping = {lab: i for i, lab in enumerate(unique)}
