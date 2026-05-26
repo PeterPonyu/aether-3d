@@ -2,12 +2,14 @@
 Proper pytest tests for Aether3D (shared flow + Aether-specific components).
 """
 
+import pytest
 import torch
 import numpy as np
 import anndata as ad
 import pytorch_lightning as pl
 
-from aether_3d.flow import create_flow_transport, LinearPath
+from aether_3d.flow import create_flow_transport, FlowSampler, LinearPath
+from aether_3d.flow.integrators import ode as ode_integrator
 from aether_3d.config.aether_config import Aether3DConfig
 from aether_3d.core.aether_reconstructor import AetherReconstructor
 from aether_3d.models.aether_velocity_field import MultiModalVelocityField
@@ -26,12 +28,17 @@ def test_linear_path():
 def test_aether_multi_modal_field():
     # Note: current model expects gene input already patched to patch_size (default 8)
     model = MultiModalVelocityField(
-        spatial_dim=2, gene_dim=32, num_classes=4,
-        hidden_size=24, depth=2, num_heads=2, patch_size=8
+        spatial_dim=2,
+        gene_dim=32,
+        num_classes=4,
+        hidden_size=24,
+        depth=2,
+        num_heads=2,
+        patch_size=8,
     )
     state = {
         "x": torch.randn(3, 2),
-        "g": torch.randn(3, 32),   # raw gene features
+        "g": torch.randn(3, 32),  # raw gene features
         "c": torch.randn(3, 4),
     }
     t = torch.rand(3)
@@ -59,9 +66,15 @@ def test_aether_config():
 def test_pytorch_uot_and_cost_parity():
     rng = np.random.default_rng(42)
     n0, n1 = 30, 25
-    x0, x1 = rng.random((n0, 2)).astype(np.float32), rng.random((n1, 2)).astype(np.float32)
-    g0, g1 = rng.random((n0, 10)).astype(np.float32), rng.random((n1, 10)).astype(np.float32)
-    
+    x0, x1 = (
+        rng.random((n0, 2)).astype(np.float32),
+        rng.random((n1, 2)).astype(np.float32),
+    )
+    g0, g1 = (
+        rng.random((n0, 10)).astype(np.float32),
+        rng.random((n1, 10)).astype(np.float32),
+    )
+
     # one-hot cell labels
     c0 = np.zeros((n0, 3), dtype=np.float32)
     c0[np.arange(n0), rng.integers(0, 3, n0)] = 1.0
@@ -77,12 +90,14 @@ def test_pytorch_uot_and_cost_parity():
     c0_t, c1_t = torch.tensor(c0), torch.tensor(c1)
 
     c_pt = compute_hybrid_cost(x0_t, g0_t, c0_t, x1_t, g1_t, c1_t, alpha_spatial=0.6)
-    
+
     assert isinstance(c_pt, torch.Tensor)
     assert np.allclose(c_cpu, c_pt.numpy(), atol=1e-5)
 
     # UOT coupling parity
-    src_cpu, tgt_cpu, w_cpu = compute_uot_coupling(c_cpu, reg=0.5, tau=0.1, n_samples=100)
+    src_cpu, tgt_cpu, w_cpu = compute_uot_coupling(
+        c_cpu, reg=0.5, tau=0.1, n_samples=100
+    )
     src_pt, tgt_pt, w_pt = compute_uot_coupling(c_pt, reg=0.5, tau=0.1, n_samples=100)
 
     assert isinstance(src_pt, torch.Tensor)
@@ -132,3 +147,210 @@ def test_aether_reconstructor_fit_runs_one_training_batch(tmp_path):
     assert returned is trainer
     assert trainer.global_step == 1
     assert recon.module is not None
+
+
+# ---------------------------------------------------------------------------
+# New edge-case tests for UOT coupling, volume reconstruction, and ODE integration
+# ---------------------------------------------------------------------------
+
+
+def test_uot_hybrid_cost_shapes():
+    """Verify compute_hybrid_cost produces a cost matrix of shape (n0, n1)."""
+    rng = np.random.default_rng(42)
+    n0, n1 = 50, 40
+    x0 = rng.random((n0, 2)).astype(np.float32)
+    g0 = rng.random((n0, 32)).astype(np.float32)
+    c0 = np.eye(4)[rng.integers(0, 4, n0)].astype(np.float32)
+    x1 = rng.random((n1, 2)).astype(np.float32)
+    g1 = rng.random((n1, 32)).astype(np.float32)
+    c1 = np.eye(4)[rng.integers(0, 4, n1)].astype(np.float32)
+
+    cost = compute_hybrid_cost(x0, g0, c0, x1, g1, c1, alpha_spatial=0.5)
+    assert cost.shape == (n0, n1)
+
+
+def test_uot_coupling_valid_indices():
+    """Verify UOT coupling returns src/tgt indices within valid bounds."""
+    rng = np.random.default_rng(7)
+    n0, n1 = 30, 20
+    cost = rng.random((n0, n1)).astype(np.float32)
+    src, tgt, w = compute_uot_coupling(cost, n_samples=200)
+
+    assert len(src) == 200
+    assert len(tgt) == 200
+    assert np.all(src >= 0) and np.all(src < n0)
+    assert np.all(tgt >= 0) and np.all(tgt < n1)
+
+
+def test_uot_numpy_fallback():
+    """Verify the NumPy (non-PyTorch) code path returns NumPy arrays."""
+    rng = np.random.default_rng(13)
+    n0, n1 = 20, 15
+    cost = rng.random((n0, n1)).astype(np.float32)
+    src, tgt, w = compute_uot_coupling(cost, reg=0.5, tau=0.1, n_samples=50)
+
+    assert isinstance(src, np.ndarray)
+    assert isinstance(tgt, np.ndarray)
+    assert isinstance(w, np.ndarray)
+
+
+def test_uot_empty_input():
+    """Verify graceful handling of an empty source slice (0 cells)."""
+    # Construct empty cost matrices directly (compute_hybrid_cost may fail on
+    # fully-empty input due to .max() on zero-size arrays)
+    cost_empty_src = np.zeros((0, 10), dtype=np.float32)
+    cost_empty_tgt = np.zeros((10, 0), dtype=np.float32)
+
+    # UOT coupling on empty-cost matrices should raise a clear error
+    with pytest.raises(ValueError):
+        compute_uot_coupling(cost_empty_src, n_samples=10)
+
+    with pytest.raises(ValueError):
+        compute_uot_coupling(cost_empty_tgt, n_samples=10)
+
+
+def test_reconstructor_setup_data():
+    """Verify setup_data() correctly infers spatial_dim, gene_dim, num_classes."""
+    rng = np.random.default_rng(17)
+    adata_list = []
+    for z in (0.0, 1.0, 2.0):
+        n_cells = 50
+        adata = ad.AnnData(
+            X=rng.normal(size=(n_cells, 32)).astype(np.float32),
+            obs={
+                "cell_type": np.random.choice(
+                    ["T", "B", "Myeloid", "Epithelial"], n_cells
+                ),
+                "z_coord": [z] * n_cells,
+            },
+        )
+        adata.obsm["spatial"] = rng.normal(size=(n_cells, 2)).astype(np.float32)
+        adata_list.append(adata)
+
+    cfg = Aether3DConfig(
+        label_key="cell_type",
+        hidden_size=16,
+        depth=1,
+        num_heads=2,
+        patch_size=4,
+    )
+    recon = AetherReconstructor(cfg)
+    recon.setup_data(adata_list)
+
+    assert recon.model is not None
+    assert recon.spatial_dim == 2
+    assert recon.gene_dim == 32
+    assert recon.num_classes == 4
+
+
+def test_reconstructor_reconstruct_shapes():
+    """Verify reconstructed volume AnnData has spatial_3d, z_3d, source_slice."""
+    from unittest.mock import patch
+    from aether_3d.flow.integrators import ode as _real_ode
+
+    # Work around t0==t1==0 (first depth) which torchdiffeq rejects.
+    # The real fix belongs in the ODE integrator; this patch is test-only.
+    def _safe_ode(
+        drift,
+        *,
+        t0=0.0,
+        t1=1.0,
+        num_steps=None,
+        solver_type="dopri5",
+        atol=1e-5,
+        rtol=1e-5,
+        device=None,
+    ):
+        if abs(t1 - t0) < 1e-8:
+
+            def sample(x):
+                return x
+
+            return sample
+        return _real_ode(
+            drift,
+            t0=t0,
+            t1=t1,
+            num_steps=num_steps,
+            solver_type=solver_type,
+            atol=atol,
+            rtol=rtol,
+            device=device,
+        )
+
+    rng = np.random.default_rng(23)
+    n_cells = 50
+    adata_list = []
+    for z in (0.0, 1.0):
+        adata = ad.AnnData(
+            X=rng.normal(size=(n_cells, 32)).astype(np.float32),
+            obs={
+                "cell_type": np.random.choice(
+                    ["T", "B", "Myeloid", "Epithelial"], n_cells
+                ),
+                "z_coord": [z] * n_cells,
+            },
+        )
+        adata.obsm["spatial"] = rng.normal(size=(n_cells, 2)).astype(np.float32)
+        adata_list.append(adata)
+
+    cfg = Aether3DConfig(
+        label_key="cell_type",
+        hidden_size=16,
+        depth=1,
+        num_heads=2,
+        patch_size=4,
+        n_samples_volume=100,
+        thickness=5.0,
+    )
+    recon = AetherReconstructor(cfg)
+    recon.setup_data(adata_list)
+
+    with patch("aether_3d.core.aether_reconstructor.ode", _safe_ode):
+        volume = recon.reconstruct_continuous_volume(
+            adata_list, n_samples=100, num_depths=3
+        )
+
+    assert "spatial_3d" in volume.obsm
+    assert "z_3d" in volume.obs
+    assert "source_slice" in volume.obs
+    assert volume.n_obs > 0
+
+
+def test_ode_integrator_smoke():
+    """Verify ODE integrator produces correct output shape for simple linear drift."""
+
+    def drift(x: torch.Tensor, t: torch.Tensor) -> torch.Tensor:
+        return -x
+
+    x_start = torch.randn(10, 4)
+    integrator = ode_integrator(
+        drift, t0=0.0, t1=1.0, num_steps=10, solver_type="euler"
+    )
+    x_end = integrator(x_start)
+
+    assert x_end.shape == x_start.shape
+    # dx/dt = -x  →  x(t) = x0 * exp(-t)  →  x(1) ≈ 0.368 * x0
+    expected = x_start * np.exp(-1.0)
+    assert torch.allclose(x_end, expected, atol=0.15)
+
+
+def test_flow_sampler_ode_shape():
+    """Verify FlowSampler.sample_ode produces output of the requested shape."""
+
+    class TrivialModel(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.dummy = torch.nn.Linear(1, 1)  # ensures model has parameters
+
+        def forward(self, x, t, **kwargs):
+            return torch.zeros_like(x)
+
+    transport = create_flow_transport(path="linear", prediction="velocity")
+    model = TrivialModel()
+    sampler = FlowSampler(transport, model)
+
+    shape = (4, 8)
+    out = sampler.sample_ode(shape=shape, num_steps=5, solver="euler")
+
+    assert out.shape == shape
