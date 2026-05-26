@@ -2,11 +2,16 @@
 
 # Build the manuscript PDF end-to-end:
 #   1. (Re)compose every figure from the synthetic benchmark JSONs
-#   2. Run latexmk to compile main.tex
+#   2. Compile main.tex via explicit pdflatex + bibtex + pdflatex x2 chain.
+#      We avoid `latexmk -pdf` here because it stops early when the .aux
+#      file changes during the bibtex pass, producing an empty bibliography.
 #
-# Requires: pdflatex, latexmk, matplotlib (use the dl env)
+# Requires: pdflatex, bibtex, matplotlib (use the dl env)
 pdf: figures
-	latexmk -pdf -interaction=nonstopmode -halt-on-error main.tex
+	pdflatex -interaction=nonstopmode -halt-on-error main.tex > /dev/null
+	bibtex main > /dev/null || true
+	pdflatex -interaction=nonstopmode -halt-on-error main.tex > /dev/null
+	pdflatex -interaction=nonstopmode -halt-on-error main.tex
 	@echo "[manuscript] PDF built at main.pdf"
 
 # Compose multi-panel figures from results/benchmark/*.json
