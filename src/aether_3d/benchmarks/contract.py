@@ -241,6 +241,7 @@ def compute_volume_metrics(volume: ad.AnnData, inp: VolumeAdapterInput) -> dict[
         count_ratio = float(v_slice.n_obs) / max(truth.n_obs, 1)
 
         quartet = _compute_quartet(v_slice, truth, spatial_key, inp.label_key)
+        topology = _compute_topology(v_slice, truth, spatial_key)
 
         per_slice.append({
             "z_target": float(z_target),
@@ -250,6 +251,7 @@ def compute_volume_metrics(volume: ad.AnnData, inp: VolumeAdapterInput) -> dict[
             "chamfer": chamfer,
             "coord_rmse": rmse,
             **quartet,
+            **topology,
         })
 
     metrics["per_holdout_slice"] = per_slice
@@ -266,7 +268,19 @@ def compute_volume_metrics(volume: ad.AnnData, inp: VolumeAdapterInput) -> dict[
     metrics["mean_domain_ari"] = _agg("domain_ari")
     metrics["mean_domain_nmi"] = _agg("domain_nmi")
     metrics["mean_celltype_proportion_spearman"] = _agg("celltype_proportion_spearman")
+    metrics["mean_betti0_stability"] = _agg("betti0_stability")
     return metrics
+
+
+def _compute_topology(volume_slice, truth, spatial_key):
+    """Thin wrapper that pulls only the no-velocity metrics for per-slice scoring."""
+    from .topology import betti_zero_stability
+
+    if spatial_key not in volume_slice.obsm or spatial_key not in truth.obsm:
+        return {"betti0_stability": float("nan")}
+    v_coords = np.asarray(volume_slice.obsm[spatial_key], dtype=np.float32)
+    t_coords = np.asarray(truth.obsm[spatial_key], dtype=np.float32)
+    return {"betti0_stability": betti_zero_stability(t_coords, v_coords)}
 
 
 def _compute_quartet(volume_slice, truth, spatial_key, label_key):
