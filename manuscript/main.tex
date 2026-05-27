@@ -72,17 +72,27 @@ Three-dimensional tissue context cannot be recovered from 2D imaging
 without an explicit reconstruction step that addresses two coupled
 problems: (i)~aligning discrete sections in a shared 3D coordinate
 system; (ii)~estimating the cellular and molecular state at intermediate
-depths the imager did not capture. Prior art spans alignment-only
+depths the imager did not capture. The local reference stack now includes
+multi-slice integration, alignment, and platform-benchmark papers that make
+section spacing, missing sections, and modality-specific resolution explicit
+sources of variation~\cite{Dong2025MultisliceBenchmark,
+ClusteringIntegrationBenchmark2024,You2024SequencingST,Cervilla2026SixCancerPlatforms}.
+Prior art spans alignment-only
 methods, 2.5D virtual-slice interpolators, and continuous-field
 generative models; we cite these as motivation rather than re-using their
-methodology. \textsc{Aether3D} builds on entropic optimal
+methodology, with DeepSpatial treated as an aspirational large-scale prior-art
+reference rather than a reproduced result~\cite{Yang2026DeepSpatial}.
+\textsc{Aether3D} builds on entropic optimal
 transport~\cite{Cuturi2013Sinkhorn} for slice coupling, flow
 matching~\cite{Lipman2023FlowMatching} for the velocity field, and
 adaptive normalization~\cite{Peebles2023DiT} for conditioning on
 heterogeneous cell-state tokens. Downstream analyses use spatial
 autocorrelation~\cite{Moran1950Autocorrelation}, adjusted Rand
 similarity~\cite{Hubert1985Adjusted}, and persistent-homology
-descriptors~\cite{Edelsbrunner2010PersistentHomology}; the data plumbing
+descriptors~\cite{Edelsbrunner2010PersistentHomology}; spatial-domain
+application pressure is represented by CellCharter-style niche discovery,
+which remains cited rather than integrated in this scaffold~\cite{Varrone2024CellCharter}.
+The data plumbing
 follows standard single-cell tooling~\cite{Wolf2018Scanpy}.
 
 \textsc{Aether3D} contributes three independent levers: (i)~a uniform
@@ -328,10 +338,14 @@ the multi-planar (sagittal/coronal/horizontal) virtual-plane composer
 on real coordinates (Day~7) and the per-brain-region cell-type
 Spearman panel on the ABC mouse-brain section ladder (Day~8). The
 39-million-cell whole-atlas reconstruction reported by DeepSpatial \S2.5
-is cited rather than reproduced; we scale gradually section by section
+is cited rather than reproduced~\cite{Yang2026DeepSpatial}; we scale gradually section by section
 from the calendar Day~2 anchor (section C57BL6J-638850.31). Each
 transition is gated by the claim-ledger update described above; no
 claim graduates without linked evidence.
+Animal-1/Animal-2 cross-validation and CellCharter-style spatial-domain
+analysis are likewise treated as reference-pressure checks rather than
+implemented claims until the required independent atlas and external-method
+contracts are present~\cite{Yang2026DeepSpatial,Varrone2024CellCharter}.
 
 \section*{Data and code availability}
 
