@@ -206,6 +206,87 @@ def celltype_proportion_spearman(
         return _spearman_fallback(t_counts, r_counts)
 
 
+def celltype_distribution_cosine(
+    truth_labels: Sequence[Any],
+    recon_labels: Sequence[Any],
+) -> float:
+    """Cosine similarity of per-label cell-count vectors.
+
+    Round 11 W004 — closes the DeepSpatial Section 2.2 cell-type
+    cosine-similarity gap. Complements `celltype_proportion_spearman`:
+    Spearman captures rank agreement (e.g. "which cell types are
+    most/least frequent"); cosine captures vector-direction agreement
+    in raw-count space (less affected by minor rank perturbations).
+
+    Returns 1.0 = perfectly aligned proportions; 0.0 = orthogonal;
+    NaN if either side is the zero vector.
+    """
+    if len(truth_labels) == 0 or len(recon_labels) == 0:
+        return float("nan")
+    all_labels = sorted(set(truth_labels) | set(recon_labels))
+    t = np.array(
+        [sum(1 for x in truth_labels if x == lab) for lab in all_labels],
+        dtype=np.float64,
+    )
+    r = np.array(
+        [sum(1 for x in recon_labels if x == lab) for lab in all_labels],
+        dtype=np.float64,
+    )
+    nt, nr = float(np.linalg.norm(t)), float(np.linalg.norm(r))
+    if nt < 1e-12 or nr < 1e-12:
+        return float("nan")
+    return float(np.dot(t, r) / (nt * nr))
+
+
+def virtual_slice_at_depth(
+    volume_adata: ad.AnnData,
+    z_target: float,
+    eps: float = 0.5,
+    physical_z_key: str = "physical_z_um",
+) -> ad.AnnData:
+    """Extract a 2D virtual slice from a 3D volume AnnData at depth `z_target`.
+
+    Round 11 W005 — DeepSpatial Section 2.3 reports virtual-slice
+    extraction at arbitrary depths along the z-axis. This helper is
+    the slice-extraction primitive around the trained flow-ODE
+    reconstruction: caller passes a continuous-volume AnnData whose
+    `.obs[physical_z_key]` records each cell's z-coord (in micrometers
+    when the column matches the schema); the function returns the
+    subset of cells within `|z - z_target| <= eps`.
+
+    Args:
+        volume_adata: continuous 3D AnnData with a per-cell physical-z column.
+        z_target: target slice depth (same units as the obs column).
+        eps: half-width of the slab around `z_target` (default ±0.5).
+        physical_z_key: name of the obs column carrying z-coords.
+
+    Returns:
+        AnnData view filtered to the slab; `.uns["virtual_slice"]` carries
+        `z_target`, `eps`, `n_cells_in_slab`, and the physical_z key used.
+
+    Raises:
+        KeyError if `physical_z_key` is not in `.obs`.
+        ValueError if `eps <= 0`.
+    """
+    if eps <= 0:
+        raise ValueError(f"eps must be positive, got {eps}")
+    if physical_z_key not in volume_adata.obs.columns:
+        raise KeyError(
+            f"obs column {physical_z_key!r} missing; have: "
+            f"{sorted(volume_adata.obs.columns)[:8]}"
+        )
+    z = np.asarray(volume_adata.obs[physical_z_key].values, dtype=np.float64)
+    mask = np.abs(z - float(z_target)) <= eps
+    sliced = volume_adata[mask].copy()
+    sliced.uns["virtual_slice"] = {
+        "z_target": float(z_target),
+        "eps": float(eps),
+        "n_cells_in_slab": int(mask.sum()),
+        "physical_z_key": physical_z_key,
+    }
+    return sliced
+
+
 def geometry_quartet(
     volume_slice: ad.AnnData,
     truth: ad.AnnData,
