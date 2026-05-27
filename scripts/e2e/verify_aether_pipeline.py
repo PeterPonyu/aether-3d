@@ -90,13 +90,15 @@ def main():
             )
         adatas, _ = generate_synthetic_slices()
 
+    smoke_reconstruction_samples = 2_000
     cfg = Aether3DConfig(
         hidden_size=32,
         depth=2,
         num_heads=2,
         batch_size=64,
         max_epochs=2,
-        n_samples_base=2000,
+        n_samples_base=2_000,
+        n_samples_volume=smoke_reconstruction_samples,
     )
 
     dataset = SerialSliceTrajectoryDataset(adatas, cfg)
@@ -126,7 +128,12 @@ def main():
     # Attach the (untrained but instantiated) model for the reconstructor demo
     recon.model = model
 
-    volume = recon.reconstruct_continuous_volume(adatas, thickness=10.0, num_depths=4)
+    volume = recon.reconstruct_continuous_volume(
+        adatas,
+        thickness=10.0,
+        n_samples=smoke_reconstruction_samples,
+        num_depths=4,
+    )
 
     print("\nReconstructed 3D volume:")
     print(f"  Cells: {volume.n_obs}")
