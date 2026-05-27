@@ -250,7 +250,7 @@ def compose_uot_ablation(ablation: dict, out_path: Path, source_path: Path, data
                        cmap="viridis", vmin=0, vmax=1)
         _bold_panel_label(ax, chr(ord('a') + pi))
         ax.set_xticks(np.arange(len(lambdas)))
-        ax.set_xticklabels([f"{l:g}" for l in lambdas])
+        ax.set_xticklabels([f"{lam:g}" for lam in lambdas])
         ax.set_yticks(np.arange(len(alphas)))
         ax.set_yticklabels([f"{a:g}" for a in alphas])
         ax.set_xlabel(r"$\lambda_{\mathrm{class}}$")
