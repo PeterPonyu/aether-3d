@@ -10,7 +10,6 @@ import types
 
 import anndata as ad
 import numpy as np
-import scanpy as sc
 
 from aether_3d.benchmarks import VolumeAdapterInput
 from aether_3d.benchmarks.adapters import (

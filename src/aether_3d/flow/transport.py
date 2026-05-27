@@ -22,14 +22,14 @@ will use is intentionally small:
 from __future__ import annotations
 
 import enum
-from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, Literal, Optional, Tuple
+from dataclasses import dataclass
+from typing import Any, Callable, Dict, Optional, Tuple
 
 import torch
 import torch.nn as nn
 
 from .path import InterpolationPath, get_path
-from .integrators import ode, sde
+from .integrators import ode
 from .utils import expand_time_like_data, mean_flat
 
 

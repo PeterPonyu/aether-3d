@@ -12,7 +12,6 @@ References (for the overall flow-matching approach):
 from __future__ import annotations
 
 import torch
-from typing import Tuple
 
 
 def expand_time_like_data(t: torch.Tensor, x: torch.Tensor) -> torch.Tensor:

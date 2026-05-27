@@ -53,7 +53,7 @@ def ode(
 
 
 def sde(
-    drift: Callable[[torch.Tensor, torch.Tensor, torch.Tensor], torch.Tensor],
+    drift: Callable[[torch.Tensor, torch.Tensor], torch.Tensor],
     diffusion: Callable[[torch.Tensor, torch.Tensor], torch.Tensor],
     *,
     t0: float = 0.0,

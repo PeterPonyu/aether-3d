@@ -11,6 +11,8 @@ Fresh implementation — no code copied from the original DeepSpatial GiT multi-
 from __future__ import annotations
 
 import math
+
+import numpy as np
 import torch
 import torch.nn as nn
 from timm.models.vision_transformer import Attention, Mlp
@@ -82,8 +84,6 @@ class AetherFinalLayer(nn.Module):
         x = self.linear(x)
         return x
 
-
-import numpy as np
 
 def get_1d_sincos_pos_embed_from_grid(embed_dim, pos):
     assert embed_dim % 2 == 0

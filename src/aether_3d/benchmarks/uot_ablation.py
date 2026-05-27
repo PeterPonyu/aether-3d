@@ -12,7 +12,7 @@ hybrid-cost weighting choices.
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass
 from typing import Sequence
 
 import numpy as np

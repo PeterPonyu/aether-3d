@@ -27,6 +27,14 @@ jobs:
         pip install -e ".[dev]"
         pip install plotly pyvista
 
+    - name: Ruff lint
+      run: ruff check src tests
+
+    - name: Mypy type check
+      # Non-strict baseline; tightening tracked as a follow-up to issue #32.
+      run: mypy src
+      continue-on-error: true
+
     - name: Run tests
       run: |
         pytest

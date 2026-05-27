@@ -63,9 +63,9 @@ def test_morans_i_per_gene_constant_gene_is_nan():
     X = rng.normal(size=(n_cells, n_genes)).astype(np.float32)
     X[:, 2] = 1.0  # constant gene
     coords = rng.uniform(0, 100, size=(n_cells, 2)).astype(np.float32)
-    I = morans_i_per_gene(X, coords, k=6)
-    assert np.isnan(I[2])
-    assert not np.isnan(I[0])
+    mi = morans_i_per_gene(X, coords, k=6)
+    assert np.isnan(mi[2])
+    assert not np.isnan(mi[0])
 
 
 def test_morans_i_spatially_structured_gene_has_positive_I():
@@ -74,10 +74,10 @@ def test_morans_i_spatially_structured_gene_has_positive_I():
     n_cells = 80
     coords = rng.uniform(0, 100, size=(n_cells, 2)).astype(np.float32)
     X = np.column_stack([coords[:, 0], rng.normal(size=n_cells)]).astype(np.float32)
-    I = morans_i_per_gene(X, coords, k=6)
-    assert I[0] > 0.2, f"spatially structured gene should have positive I, got {I[0]}"
+    mi = morans_i_per_gene(X, coords, k=6)
+    assert mi[0] > 0.2, f"spatially structured gene should have positive I, got {mi[0]}"
     # The noise gene should have I near 0.
-    assert abs(I[1]) < 0.3, f"noise gene I should be near 0, got {I[1]}"
+    assert abs(mi[1]) < 0.3, f"noise gene I should be near 0, got {mi[1]}"
 
 
 def test_morans_i_agreement_returns_finite_score_on_realistic_input():

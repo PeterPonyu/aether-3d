@@ -93,8 +93,10 @@ def test_cost_backward_compatible_default_lambda_is_10():
     rng = np.random.default_rng(0)
     coords = rng.uniform(0, 100, size=(n, 2)).astype(np.float32)
     g = rng.normal(0, 1, size=(n, 8)).astype(np.float32)
-    c0 = np.zeros((n, 2), dtype=np.float32); c0[:, 0] = 1
-    c1 = np.zeros((n, 2), dtype=np.float32); c1[:, 1] = 1
+    c0 = np.zeros((n, 2), dtype=np.float32)
+    c0[:, 0] = 1
+    c1 = np.zeros((n, 2), dtype=np.float32)
+    c1[:, 1] = 1
 
     explicit = compute_hybrid_cost(coords, g, c0, coords, g, c1, alpha_spatial=0.5, lambda_class=10.0)
     default = compute_hybrid_cost(coords, g, c0, coords, g, c1, alpha_spatial=0.5)

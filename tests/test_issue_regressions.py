@@ -9,7 +9,6 @@ contracted behaviour introduced by b9fc009 remains intact.
 
 import subprocess
 import time
-import warnings
 from pathlib import Path
 
 import numpy as np
