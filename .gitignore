@@ -25,7 +25,8 @@ wheels/
 *.egg
 
 # Results and logs
-results/
+results/*
+!results/holdout_validation_metrics.json
 *.log
 
 # Local real-data caches; keep data/cards tracked.

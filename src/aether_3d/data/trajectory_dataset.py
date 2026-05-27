@@ -7,7 +7,7 @@ Clean re-implementation of the original DeepSpatialDataset logic.
 
 from __future__ import annotations
 
-from typing import List, Dict
+from typing import List
 
 import numpy as np
 import scanpy as sc
@@ -30,8 +30,13 @@ class SerialSliceTrajectoryDataset(Dataset):
         adata_list: List[sc.AnnData],
         config: Aether3DConfig,
     ):
+        if len(adata_list) < 2:
+            raise ValueError(
+                f"SerialSliceTrajectoryDataset needs >=2 slices; got {len(adata_list)}."
+            )
         self.adata_list = adata_list
         self.cfg = config
+        self.rng = np.random.default_rng(config.seed)
 
         # Global label encoder
         all_labels = []
@@ -46,6 +51,11 @@ class SerialSliceTrajectoryDataset(Dataset):
         self._build_trajectories()
 
     def _build_trajectories(self):
+        if len(self.adata_list) < 2:
+            raise ValueError(
+                "SerialSliceTrajectoryDataset requires at least two slices; "
+                "single-slice input cannot define cross-slice trajectories."
+            )
         self.pairs = []
         for i in range(len(self.adata_list) - 1):
             ad0 = self.adata_list[i]
@@ -64,7 +74,8 @@ class SerialSliceTrajectoryDataset(Dataset):
                 cost,
                 reg=self.cfg.uot_reg,
                 tau=self.cfg.uot_tau,
-                n_samples=self.cfg.n_samples_base // max(1, len(self.adata_list) - 1),
+                n_samples=self.cfg.n_samples_base // (len(self.adata_list) - 1),
+                rng=self.rng,
             )
 
             for s, t in zip(src, tgt):

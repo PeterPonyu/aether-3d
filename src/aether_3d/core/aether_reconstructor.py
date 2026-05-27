@@ -7,6 +7,7 @@ It mirrors the role of LuminaImputer but for serial slice → continuous 3D volu
 
 from __future__ import annotations
 
+import random
 from typing import List
 
 import anndata as ad
@@ -24,6 +25,12 @@ from ..coupling.uot import compute_hybrid_cost, compute_uot_coupling
 from ..flow.integrators import ode
 
 
+def _seed_worker(worker_id: int) -> None:
+    worker_seed = torch.initial_seed() % 2**32
+    np.random.seed(worker_seed)
+    random.seed(worker_seed)
+
+
 class AetherReconstructor:
     """
     High-level interface for 3D reconstruction.
@@ -39,8 +46,10 @@ class AetherReconstructor:
         self.cfg = config
         self.model = None
         self.dataset = None
+        self._rng = np.random.default_rng(config.seed)
 
     def setup_data(self, adata_list: List[ad.AnnData]):
+        pl.seed_everything(self.cfg.seed, workers=True)
         self.dataset = SerialSliceTrajectoryDataset(adata_list, self.cfg)
         # Infer dims
         sample = self.dataset[0]
@@ -65,11 +74,16 @@ class AetherReconstructor:
         if model is None:
             raise RuntimeError("Call setup_data first")
 
+        pl.seed_everything(self.cfg.seed, workers=True)
+        generator = torch.Generator().manual_seed(self.cfg.seed)
+
         loader = DataLoader(
             self.dataset,
             batch_size=self.cfg.batch_size,
             shuffle=True,
             num_workers=self.cfg.num_workers,
+            generator=generator,
+            worker_init_fn=_seed_worker,
         )
 
         self.module = AetherFlowModule(self.cfg, model)
@@ -119,6 +133,12 @@ class AetherReconstructor:
             f"(thickness={thickness}, samples_per_pair~{n_samples}, depths={num_depths})..."
         )
 
+        if len(adata_list) < 2:
+            raise ValueError(
+                f"reconstruct_continuous_volume needs >=2 slices; got {len(adata_list)}."
+            )
+
+        rng = np.random.default_rng(self.cfg.seed)
         all_cells = []
         z_offset = 0.0
 
@@ -146,7 +166,14 @@ class AetherReconstructor:
 
             # UOT-based cell pairing: hybrid cost (spatial + gene cosine + class)
             cost = compute_hybrid_cost(x0_all, g0_all, c0_all, x1_all, g1_all, c1_all)
-            src_idx, tgt_idx, weights = compute_uot_coupling(cost, n_samples=n_samples)
+            torch_generator = torch.Generator(device=cost.device).manual_seed(
+                self.cfg.seed + i
+            )
+            src_idx, tgt_idx, weights = compute_uot_coupling(
+                cost,
+                n_samples=n_samples,
+                torch_generator=torch_generator,
+            )
 
             # Convert to numpy for sampling (handles both torch.Tensor and np.ndarray)
             src_np = (
@@ -175,20 +202,26 @@ class AetherReconstructor:
 
                 return drift_fn
 
-            # For each virtual depth, integrate the ODE and sample proportionally
+            # For each virtual depth, integrate the ODE and sample proportionally.
+            # Skip the left endpoint after the first interval so interior slice
+            # planes are owned by exactly one adjacent pair.
             depths = np.linspace(0, 1, num_depths)
+            if i > 0:
+                depths = depths[1:]
             for d in depths:
+                if i > 0 and np.isclose(d, 0.0):
+                    continue
                 # Density-preserving inverse transform sampling:
                 # interpolate cell count between slices, then sample weighted by UOT
                 n_virtual = int(np.round(n0 + d * (n1 - n0)))
                 n_virtual = max(n_virtual, 1)
 
                 if n_virtual <= n_available:
-                    chosen = np.random.choice(
+                    chosen = rng.choice(
                         n_available, n_virtual, replace=False, p=w_np
                     )
                 else:
-                    chosen = np.random.choice(
+                    chosen = rng.choice(
                         n_available, n_virtual, replace=True, p=w_np
                     )
 
@@ -237,7 +270,10 @@ class AetherReconstructor:
                 layer_adata.obsm["cell_class_vel"] = new_c.numpy()
                 all_cells.append(layer_adata)
 
-            z_offset += thickness
+            # Each adjacent-slice interval includes both endpoints; advance by
+            # one interval so interior physical slice planes are not translated
+            # twice when multiple intervals are concatenated.
+            z_offset = (i + 1) * thickness
 
         # Concatenate everything
         volume = sc.concat(all_cells, axis=0, join="outer")

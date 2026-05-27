@@ -18,7 +18,6 @@ from aether_3d.benchmarks import (
     VolumeAdapterInput,
     VolumeBaseAdapter,
     aggregate_volume_results,
-    compute_volume_metrics,
     run_holdout,
     write_volume_results_json,
 )
@@ -242,3 +241,17 @@ def test_failing_volume_adapter_returns_error_status():
 
     assert result.status.startswith("error:")
     assert "intentional failure" in result.status
+
+
+def test_chamfer_uses_nearest_neighbor_without_pairwise_materialization(monkeypatch):
+    from aether_3d.benchmarks import contract
+
+    def fail_pairwise(*args, **kwargs):
+        raise AssertionError("_pairwise_sq should not be used for nearest-neighbor metrics")
+
+    monkeypatch.setattr(contract, "_pairwise_sq", fail_pairwise)
+    a = np.array([[0.0, 0.0], [2.0, 0.0]], dtype=np.float32)
+    b = np.array([[1.0, 0.0], [3.0, 0.0]], dtype=np.float32)
+
+    assert contract._chamfer_distance(a, b) == 1.0
+    assert contract._coord_rmse(a, b) == 1.0
