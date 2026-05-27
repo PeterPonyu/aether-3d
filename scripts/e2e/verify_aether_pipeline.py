@@ -12,16 +12,27 @@ Deep verification script for Aether3D (mirrors LuminaST's verify script).
 import argparse
 from pathlib import Path
 import numpy as np
-import scanpy as sc
-import pandas as pd
-from aether_3d.config.aether_config import Aether3DConfig
-from aether_3d.data.trajectory_dataset import SerialSliceTrajectoryDataset
-from aether_3d.models.aether_velocity_field import MultiModalVelocityField
-from aether_3d.modules.aether_flow_module import AetherFlowModule
-from aether_3d.core.aether_reconstructor import AetherReconstructor
+import scanpy as sc  # type: ignore[import-untyped]
+import pandas as pd  # type: ignore[import-untyped]
+import anndata as ad  # type: ignore[import-untyped]
+from aether_3d.config.aether_config import Aether3DConfig  # type: ignore[import-untyped]
+from aether_3d.data.trajectory_dataset import SerialSliceTrajectoryDataset  # type: ignore[import-untyped]
+from aether_3d.models.aether_velocity_field import MultiModalVelocityField  # type: ignore[import-untyped]
+from aether_3d.modules.aether_flow_module import AetherFlowModule  # type: ignore[import-untyped]
+from aether_3d.core.aether_reconstructor import AetherReconstructor  # type: ignore[import-untyped]
 
 
-def generate_synthetic_slices(n_slices=3, cells_per_slice=800, n_genes=64, n_classes=4):
+SMOKE_UOT_SAMPLES = 100
+SMOKE_RECONSTRUCTION_SAMPLES = 100
+SMOKE_CELLS_PER_SLICE = 16
+
+
+def generate_synthetic_slices(
+    n_slices: int = 3,
+    cells_per_slice: int = 800,
+    n_genes: int = 64,
+    n_classes: int = 4,
+) -> tuple[list[ad.AnnData], list[str]]:
     rng = np.random.default_rng(42)
     adatas = []
     cancer_names = [f"Type{i}" for i in range(n_classes)]
@@ -40,7 +51,7 @@ def generate_synthetic_slices(n_slices=3, cells_per_slice=800, n_genes=64, n_cla
     return adatas, cancer_names
 
 
-def main():
+def main() -> bool:
     parser = argparse.ArgumentParser(
         description="Run the Aether3D synthetic smoke pipeline."
     )
@@ -78,7 +89,9 @@ def main():
             print(
                 "Baseline folder exists but no .h5ad files found. Falling back to synthetic."
             )
-            adatas, _ = generate_synthetic_slices()
+            adatas, _ = generate_synthetic_slices(
+                cells_per_slice=SMOKE_CELLS_PER_SLICE
+            )
     else:
         if DATA_ROOT.exists():
             print(
@@ -88,7 +101,7 @@ def main():
             print(
                 "No real baseline data found locally. Using improved synthetic serial slices.\n"
             )
-        adatas, _ = generate_synthetic_slices()
+        adatas, _ = generate_synthetic_slices(cells_per_slice=SMOKE_CELLS_PER_SLICE)
 
     cfg = Aether3DConfig(
         hidden_size=32,
@@ -96,8 +109,8 @@ def main():
         num_heads=2,
         batch_size=64,
         max_epochs=2,
-        n_samples_base=2000,
-        n_samples_volume=2000,
+        n_samples_base=SMOKE_UOT_SAMPLES,
+        n_samples_volume=SMOKE_RECONSTRUCTION_SAMPLES,
     )
 
     dataset = SerialSliceTrajectoryDataset(adatas, cfg)
@@ -127,7 +140,12 @@ def main():
     # Attach the (untrained but instantiated) model for the reconstructor demo
     recon.model = model
 
-    volume = recon.reconstruct_continuous_volume(adatas, thickness=10.0, num_depths=4)
+    volume = recon.reconstruct_continuous_volume(
+        adatas,
+        thickness=10.0,
+        num_depths=4,
+        n_samples=SMOKE_RECONSTRUCTION_SAMPLES,
+    )
 
     print("\nReconstructed 3D volume:")
     print(f"  Cells: {volume.n_obs}")
