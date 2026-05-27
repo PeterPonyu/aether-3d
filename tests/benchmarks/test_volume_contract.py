@@ -243,6 +243,35 @@ def test_failing_volume_adapter_returns_error_status():
     assert "intentional failure" in result.status
 
 
+def test_metric_failure_inside_adapter_boundary_returns_error_status():
+    """Regression for issue #29: metric/schema errors raised AFTER _reconstruct
+    must be caught by the adapter failure boundary and reported as
+    status="error:..." instead of escaping ``VolumeBaseAdapter.run``.
+    """
+
+    class BadVolume(VolumeBaseAdapter):
+        name = "bad-volume"
+
+        def _reconstruct(self, visible, inp):
+            # Returns a volume that lacks obsm['spatial'] / obsm['spatial_3d'],
+            # which will trip compute_volume_metrics() (KeyError 'spatial').
+            v = ad.AnnData(X=np.ones((1, 1), dtype=np.float32))
+            v.obs["z"] = [0.0]
+            return v
+
+    stack = [ad.AnnData(X=np.ones((1, 1), dtype=np.float32))]
+    stack[0].obs["z"] = [0.0]
+    stack[0].obsm["spatial"] = np.zeros((1, 2), dtype=np.float32)
+    inp = VolumeAdapterInput(slices=stack, held_out_indices=[0])
+
+    # Must not raise — failure boundary now wraps metric computation too.
+    result = BadVolume().run(inp)
+
+    assert result.status.startswith("error:"), result.status
+    assert result.volume_h5ad is None
+    assert result.metrics_json == {}
+
+
 def test_chamfer_uses_nearest_neighbor_without_pairwise_materialization(monkeypatch):
     from aether_3d.benchmarks import contract
 
