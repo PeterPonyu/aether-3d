@@ -56,7 +56,11 @@ def main():
 
     print("=== Deep Aether3D Pipeline Verification ===")
 
-    # Auto-detect real baseline data (MERFISH hypothalamus slices from original DeepSpatial)
+    # Auto-detect real baseline data inside the standalone repo
+    # (MERFISH hypothalamus slices from the original DeepSpatial baseline).
+    # parents[2] resolves to <repo>/ regardless of where this script is
+    # imported from, so the standalone clone never silently couples to a
+    # parent-monorepo layout (issue #16).
     DATA_ROOT = (
         Path(__file__).resolve().parents[2]
         / "data"
