@@ -246,39 +246,6 @@ def test_reconstructor_setup_data():
 
 def test_reconstructor_reconstruct_shapes():
     """Verify reconstructed volume AnnData has spatial_3d, z_3d, source_slice."""
-    from unittest.mock import patch
-    from aether_3d.flow.integrators import ode as _real_ode
-
-    # Work around t0==t1==0 (first depth) which torchdiffeq rejects.
-    # The real fix belongs in the ODE integrator; this patch is test-only.
-    def _safe_ode(
-        drift,
-        *,
-        t0=0.0,
-        t1=1.0,
-        num_steps=None,
-        solver_type="dopri5",
-        atol=1e-5,
-        rtol=1e-5,
-        device=None,
-    ):
-        if abs(t1 - t0) < 1e-8:
-
-            def sample(x):
-                return x
-
-            return sample
-        return _real_ode(
-            drift,
-            t0=t0,
-            t1=t1,
-            num_steps=num_steps,
-            solver_type=solver_type,
-            atol=atol,
-            rtol=rtol,
-            device=device,
-        )
-
     rng = np.random.default_rng(23)
     n_cells = 50
     adata_list = []
@@ -307,10 +274,11 @@ def test_reconstructor_reconstruct_shapes():
     recon = AetherReconstructor(cfg)
     recon.setup_data(adata_list)
 
-    with patch("aether_3d.core.aether_reconstructor.ode", _safe_ode):
-        volume = recon.reconstruct_continuous_volume(
-            adata_list, n_samples=100, num_depths=3
-        )
+    # The real ode() integrator handles t0==t1 as identity (see #15);
+    # no test-only monkey-patch needed.
+    volume = recon.reconstruct_continuous_volume(
+        adata_list, n_samples=100, num_depths=3
+    )
 
     assert "spatial_3d" in volume.obsm
     assert "z_3d" in volume.obs
