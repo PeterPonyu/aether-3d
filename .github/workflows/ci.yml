@@ -29,5 +29,7 @@ jobs:
 
     - name: Run tests
       run: |
-        # Use PYTHONPATH=src so Python finds aether_3d in the src/ directory
-        PYTHONPATH=src pytest
+        # PYTHONPATH=src:. so Python finds aether_3d (src/) AND
+        # scripts.* (repo root) — the tests/data/* suite imports
+        # `from scripts.data import …` which requires repo root on sys.path.
+        PYTHONPATH=src:. pytest
