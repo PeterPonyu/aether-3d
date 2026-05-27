@@ -7,7 +7,8 @@ unbalanced Sinkhorn solver in PyTorch, with backward compatible NumPy CPU fallba
 
 from __future__ import annotations
 
-from typing import Tuple, Union
+import warnings
+from typing import Tuple
 
 import numpy as np
 import torch
@@ -114,20 +115,27 @@ def compute_uot_coupling(
     reg: float = 0.8,
     tau: float = 0.05,
     n_samples: int = 50000,
+    rng: np.random.Generator | None = None,
+    torch_generator: torch.Generator | None = None,
 ) -> Tuple[np.ndarray | torch.Tensor, np.ndarray | torch.Tensor, np.ndarray | torch.Tensor]:
     """
     Unbalanced OT coupling using unbalanced Sinkhorn.
     Automatically routes to GPU solver if cost is a PyTorch tensor, otherwise uses POT on CPU.
     """
     if isinstance(cost, torch.Tensor):
-        return compute_uot_coupling_pytorch(cost, reg, tau, n_samples)
+        return compute_uot_coupling_pytorch(
+            cost, reg, tau, n_samples, generator=torch_generator
+        )
 
     n0, n1 = cost.shape
+    if n0 == 0 or n1 == 0:
+        raise ValueError(f"UOT coupling requires non-empty cost axes; got {cost.shape}")
+    rng = rng or np.random.default_rng()
 
     if not _HAS_POT:
         # Fallback for environments without POT
-        src = np.random.randint(0, n0, n_samples)
-        tgt = np.random.randint(0, n1, n_samples)
+        src = rng.integers(0, n0, n_samples)
+        tgt = rng.integers(0, n1, n_samples)
         weights = np.ones(n_samples) / n_samples
         return src, tgt, weights
 
@@ -137,7 +145,7 @@ def compute_uot_coupling(
 
     flat_P = P.ravel()
     flat_P = flat_P / flat_P.sum()
-    idx = np.random.choice(n0 * n1, size=n_samples, p=flat_P)
+    idx = rng.choice(n0 * n1, size=n_samples, p=flat_P)
 
     src = idx // n1
     tgt = idx % n1
@@ -152,20 +160,36 @@ def compute_uot_coupling_pytorch(
     n_samples: int = 50000,
     max_iter: int = 1000,
     tol: float = 1e-6,
+    generator: torch.Generator | None = None,
 ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """
     Unbalanced OT coupling solver on GPU/CPU in PyTorch.
     Mathematical parity with POT's sinkhorn_unbalanced.
     """
     n0, n1 = cost.shape
+    if n0 == 0 or n1 == 0:
+        raise ValueError(f"UOT coupling requires non-empty cost axes; got {tuple(cost.shape)}")
     device = cost.device
     dtype = cost.dtype
+    solver_cost = cost
+    if cost.dtype in (torch.float16, torch.bfloat16, torch.float32):
+        underflow_fraction = torch.mean(((-cost / reg) < -80).float()).item()
+        if underflow_fraction > 0:
+            warnings.warn(
+                "compute_uot_coupling_pytorch detected Sinkhorn kernel underflow risk; "
+                "solving in float64 for numerical stability.",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+            solver_cost = cost.to(torch.float64)
+            dtype = solver_cost.dtype
 
     a_t = torch.ones(n0, device=device, dtype=dtype) / n0
     b_t = torch.ones(n1, device=device, dtype=dtype) / n1
 
-    # In POT, K = exp(-cost / reg) * (a * b)
-    K = torch.exp(-cost / reg) * (a_t.unsqueeze(1) * b_t.unsqueeze(0))
+    # In POT, K = exp(-cost / reg) * (a * b).  Promote underflow-prone
+    # fp32 inputs to float64 above so lower-reg OT does not silently collapse.
+    K = torch.exp(-solver_cost / reg) * (a_t.unsqueeze(1) * b_t.unsqueeze(0))
 
     u = torch.ones(n0, device=device, dtype=dtype)
     v = torch.ones(n1, device=device, dtype=dtype)
@@ -197,9 +221,11 @@ def compute_uot_coupling_pytorch(
     else:
         flat_P = torch.ones_like(flat_P) / flat_P.numel()
 
-    idx = torch.multinomial(flat_P, num_samples=n_samples, replacement=True)
+    idx = torch.multinomial(
+        flat_P, num_samples=n_samples, replacement=True, generator=generator
+    )
     src = torch.div(idx, n1, rounding_mode='floor')
     tgt = idx % n1
     weights = flat_P[idx]
 
-    return src, tgt, weights
+    return src, tgt, weights.to(cost.dtype)

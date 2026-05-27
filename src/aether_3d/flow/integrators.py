@@ -36,6 +36,8 @@ def ode(
     """
 
     def sample(x_start: torch.Tensor) -> torch.Tensor:
+        if t0 == t1:
+            return x_start
         ts = torch.linspace(t0, t1, num_steps or 2, device=x_start.device)
         sol = odeint(
             lambda t, x: drift(x, t.expand(x.shape[0]).to(x.device)),

@@ -10,12 +10,15 @@ Given a schema-valid stack of aligned 2D spatial transcriptomics / proteomics sl
 
 "Aether" (upper pure air / continuous medium) captures the target modeling idea of a smooth tissue manifold inferred from sparse physical sampling. The current package treats that as a testable hypothesis, not as an already proven biological-fidelity claim.
 
-## Installation (Planned)
+## Installation
+
+This research package is not published on PyPI yet. Install from a clone or a GitHub branch/commit:
 
 ```bash
-pip install aether-3d
-# dev
-pip install -e ".[viz]"
+git clone https://github.com/PeterPonyu/aether-3d
+cd aether-3d
+pip install -e ".[dev,viz]"
+# or: pip install "git+https://github.com/PeterPonyu/aether-3d.git"
 ```
 
 ## Quick Start (Target API)
@@ -32,13 +35,17 @@ cfg = Aether3DConfig(
     patch_size=8,
     hidden_size=256,
     depth=6,
-    uot_alpha_spatial=0.5,
-    lambda_gene=0.1,
-    lambda_class=10.0
+    alpha_spatial=0.5,
+    lambda_g=0.1,
+    lambda_c=10.0,
+    spatial_key="spatial",
+    z_key="z_coord",
+    label_key="cell_class",
+    seed=42,
 )
 
 model = AetherReconstructor(cfg)
-model.setup_data(adatas, spatial_key="spatial", z_key="z_coord", label_key="cell_class")
+model.setup_data(adatas)
 model.fit(max_epochs=100)
 
 volume = model.reconstruct_continuous_volume(adatas, thickness=10.0, n_samples=200000)

@@ -41,10 +41,11 @@ dependencies = [
   "torchdiffeq",
   "timm",
   "pot",  # optional later
+  "pytorch-lightning>=2.0",
 ]
 
 [project.optional-dependencies]
-dev = ["pytest", "ruff", "mypy", "lightning", "wandb"]
+dev = ["pytest", "ruff", "mypy", "wandb"]
 viz = ["plotly", "pyvista", "ipywidgets", "napari[all]"]
 
 [project.scripts]
@@ -61,3 +62,7 @@ target-version = "py310"
 
 [tool.mypy]
 strict = true
+
+[tool.pytest.ini_options]
+pythonpath = ["src", "."]
+testpaths = ["tests"]

@@ -12,6 +12,7 @@ from aether_3d.flow import create_flow_transport, FlowSampler, LinearPath
 from aether_3d.flow.integrators import ode as ode_integrator
 from aether_3d.config.aether_config import Aether3DConfig
 from aether_3d.core.aether_reconstructor import AetherReconstructor
+from aether_3d.data.trajectory_dataset import SerialSliceTrajectoryDataset
 from aether_3d.models.aether_velocity_field import MultiModalVelocityField
 from aether_3d.coupling.uot import compute_hybrid_cost, compute_uot_coupling
 
@@ -354,3 +355,134 @@ def test_flow_sampler_ode_shape():
     out = sampler.sample_ode(shape=shape, num_steps=5, solver="euler")
 
     assert out.shape == shape
+
+
+def _make_aether_slices(n_slices=3, n_cells=12, n_genes=8, seed=101):
+    rng = np.random.default_rng(seed)
+    adata_list = []
+    for z in range(n_slices):
+        adata = ad.AnnData(
+            X=rng.normal(size=(n_cells, n_genes)).astype(np.float32),
+            obs={
+                "cell_class": ["T", "B"] * (n_cells // 2),
+                "z_coord": [float(z)] * n_cells,
+            },
+        )
+        adata.obsm["spatial"] = rng.normal(size=(n_cells, 2)).astype(np.float32)
+        adata_list.append(adata)
+    return adata_list
+
+
+def test_ode_integrator_zero_interval_returns_identity():
+    x_start = torch.randn(4, 3)
+
+    def drift(x: torch.Tensor, t: torch.Tensor) -> torch.Tensor:
+        raise AssertionError("zero-interval integration must not call drift")
+
+    integrator = ode_integrator(drift, t0=0.0, t1=0.0, solver_type="dopri5")
+
+    assert integrator(x_start) is x_start
+
+
+def test_serial_slice_dataset_requires_at_least_two_slices():
+    adata = _make_aether_slices(n_slices=1)[0]
+    cfg = Aether3DConfig(hidden_size=8, depth=1, num_heads=2, patch_size=4)
+
+    with pytest.raises(ValueError, match=">=2 slices"):
+        SerialSliceTrajectoryDataset([adata], cfg)
+
+
+def test_serial_slice_dataset_uses_config_seed_for_uot_pairs():
+    cfg = Aether3DConfig(
+        seed=42,
+        hidden_size=8,
+        depth=1,
+        num_heads=2,
+        patch_size=4,
+        n_samples_base=20,
+    )
+
+    np.random.seed(0)
+    pairs_a = list(SerialSliceTrajectoryDataset(_make_aether_slices(), cfg).pairs)
+    np.random.seed(999)
+    pairs_b = list(SerialSliceTrajectoryDataset(_make_aether_slices(), cfg).pairs)
+
+    assert pairs_a == pairs_b
+
+
+def test_reconstruct_continuous_volume_does_not_duplicate_interior_z_planes():
+    adata_list = _make_aether_slices(n_slices=3, n_cells=12, n_genes=8)
+    cfg = Aether3DConfig(
+        seed=42,
+        hidden_size=8,
+        depth=1,
+        num_heads=2,
+        patch_size=4,
+        n_samples_base=12,
+        n_samples_volume=12,
+        thickness=10.0,
+    )
+    recon = AetherReconstructor(cfg)
+    recon.setup_data(adata_list)
+
+    volume = recon.reconstruct_continuous_volume(
+        adata_list, thickness=10.0, n_samples=12, num_depths=3
+    )
+
+    z_by_source = {
+        int(source): set(group["z_3d"].astype(float))
+        for source, group in volume.obs.groupby("source_slice")
+    }
+    assert z_by_source[0] == {0.0, 5.0, 10.0}
+    assert z_by_source[1] == {15.0, 20.0}
+    assert z_by_source[0].isdisjoint(z_by_source[1])
+
+
+def test_reconstruct_continuous_volume_uses_config_seed_per_call():
+    adata_list = _make_aether_slices(n_slices=2, n_cells=12, n_genes=8)
+    cfg = Aether3DConfig(
+        seed=42,
+        hidden_size=8,
+        depth=1,
+        num_heads=2,
+        patch_size=4,
+        n_samples_base=12,
+        n_samples_volume=12,
+    )
+    recon = AetherReconstructor(cfg)
+    recon.setup_data(adata_list)
+
+    vol_a = recon.reconstruct_continuous_volume(adata_list, n_samples=12, num_depths=2)
+    vol_b = recon.reconstruct_continuous_volume(adata_list, n_samples=12, num_depths=2)
+
+    assert np.allclose(vol_a.obsm["spatial_3d"], vol_b.obsm["spatial_3d"])
+    assert np.allclose(np.asarray(vol_a.X), np.asarray(vol_b.X))
+
+
+def test_uot_pytorch_warns_and_stays_finite_on_underflow_risk():
+    cost = torch.tensor([[100.0, 0.0], [50.0, 200.0]], dtype=torch.float32)
+    generator = torch.Generator().manual_seed(123)
+
+    with pytest.warns(RuntimeWarning, match="underflow risk"):
+        src, tgt, weights = compute_uot_coupling(
+            cost, reg=0.8, tau=0.05, n_samples=16, torch_generator=generator
+        )
+
+    assert len(src) == len(tgt) == len(weights) == 16
+    assert torch.isfinite(weights).all()
+    assert torch.all(weights >= 0)
+
+
+def test_verify_aether_pipeline_data_root_is_repo_local():
+    from pathlib import Path
+    import scripts.e2e.verify_aether_pipeline as verify
+
+    data_root = (
+        Path(verify.__file__).resolve().parents[2]
+        / "data"
+        / "baselines"
+        / "serial3d_ref"
+        / "merfish_mouse_hypothalamus"
+    )
+
+    assert data_root.parts[-5] == "aether-3d"

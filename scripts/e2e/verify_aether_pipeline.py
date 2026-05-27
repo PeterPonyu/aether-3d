@@ -21,7 +21,7 @@ from aether_3d.modules.aether_flow_module import AetherFlowModule
 from aether_3d.core.aether_reconstructor import AetherReconstructor
 
 
-def generate_synthetic_slices(n_slices=3, cells_per_slice=800, n_genes=64, n_classes=4):
+def generate_synthetic_slices(n_slices=3, cells_per_slice=48, n_genes=16, n_classes=4):
     rng = np.random.default_rng(42)
     adatas = []
     cancer_names = [f"Type{i}" for i in range(n_classes)]
@@ -58,7 +58,7 @@ def main():
 
     # Auto-detect real baseline data (MERFISH hypothalamus slices from original DeepSpatial)
     DATA_ROOT = (
-        Path(__file__).resolve().parents[3]
+        Path(__file__).resolve().parents[2]
         / "data"
         / "baselines"
         / "serial3d_ref"
@@ -91,13 +91,13 @@ def main():
         adatas, _ = generate_synthetic_slices()
 
     cfg = Aether3DConfig(
-        hidden_size=32,
-        depth=2,
+        hidden_size=16,
+        depth=1,
         num_heads=2,
-        batch_size=64,
-        max_epochs=2,
-        n_samples_base=2000,
-        n_samples_volume=2000,
+        batch_size=16,
+        max_epochs=1,
+        n_samples_base=48,
+        n_samples_volume=48,
     )
 
     dataset = SerialSliceTrajectoryDataset(adatas, cfg)
@@ -109,8 +109,8 @@ def main():
         spatial_dim=2,
         gene_dim=sample["g0"].shape[0],
         num_classes=4,
-        hidden_size=32,
-        depth=2,
+        hidden_size=16,
+        depth=1,
     )
 
     _module = AetherFlowModule(cfg, model)
@@ -127,7 +127,7 @@ def main():
     # Attach the (untrained but instantiated) model for the reconstructor demo
     recon.model = model
 
-    volume = recon.reconstruct_continuous_volume(adatas, thickness=10.0, num_depths=4)
+    volume = recon.reconstruct_continuous_volume(adatas, thickness=10.0, num_depths=3)
 
     print("\nReconstructed 3D volume:")
     print(f"  Cells: {volume.n_obs}")
