@@ -486,3 +486,34 @@ def test_verify_aether_pipeline_data_root_is_repo_local():
     )
 
     assert data_root.parts[-5] == "aether-3d"
+
+
+def test_pyproject_pins_pytorch_lightning_and_pytest_pythonpath():
+    """Regression: keep pytorch-lightning in runtime deps (#17) and the
+    pytest pythonpath block intact (#20) so editable installs + bare
+    pytest keep working."""
+    import sys
+    from pathlib import Path
+
+    if sys.version_info >= (3, 11):
+        import tomllib  # type: ignore[attr-defined]
+    else:  # pragma: no cover - python 3.10 path
+        import tomli as tomllib  # type: ignore[no-redef]
+
+    repo_root = Path(__file__).resolve().parents[1]
+    with (repo_root / "pyproject.toml").open("rb") as fh:
+        cfg = tomllib.load(fh)
+
+    runtime = cfg["project"]["dependencies"]
+    assert any(
+        spec.replace("_", "-").startswith(("pytorch-lightning", "lightning"))
+        for spec in runtime
+    ), f"pytorch-lightning must be a runtime dep (issue #17); got {runtime}"
+
+    pytest_block = cfg.get("tool", {}).get("pytest", {}).get("ini_options", {})
+    assert pytest_block.get("pythonpath") == ["src", "."], (
+        f"pytest ini_options.pythonpath drifted (issue #20); got {pytest_block}"
+    )
+    assert pytest_block.get("testpaths") == ["tests"], (
+        f"pytest ini_options.testpaths drifted (issue #20); got {pytest_block}"
+    )
