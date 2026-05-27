@@ -99,15 +99,39 @@ enforces this.
 \section{Method}
 \label{sec:method}
 
-\subsection{Volume-adapter contract}
+\subsection{Problem formulation}
+\label{sec:problem-formulation}
+
+A serial-section spatial-omics volume is a tuple
+$\mathcal{V} = \{(\mathbf{X}_k, \mathbf{S}_k, z_k)\}_{k=1}^K$ where for
+each section $k$, $\mathbf{X}_k \in \mathbb{R}^{N_k \times G}$ is the
+per-cell expression, $\mathbf{S}_k \in \mathbb{R}^{N_k \times 2}$ are
+the 2D centroid coordinates, and $z_k \in \mathbb{R}$ is the physical
+depth in micrometers. A 3D reconstruction adapter
+$g_\phi\!:\!\mathcal{V} \mapsto \tilde{\mathcal{V}}(z)$ returns a
+continuous family of synthetic slices at any query depth $z \in
+[\min_k z_k, \max_k z_k]$. The audit boundary requires that
+$g_\phi$ never observes a held-out slice $k^\star$ during the call
+that asks for $\tilde{\mathcal{V}}(z_{k^\star})$.
+
+\subsection{Architecture: volume-adapter contract + hybrid UOT coupling}
 \label{sec:contract}
 
 Each method we compare implements a uniform \texttt{VolumeBaseAdapter}
 subclassing pattern. The visible input is a list of AnnData slices with
 \texttt{.obsm["spatial"]} 2D coords and a per-slice physical-$z$ value;
 held-out slices are removed from the adapter-visible input before any
-call. Per-result provenance records device, runtime, peak memory, torch
-version, CUDA version, hostname, and git SHA.
+call. Per-result provenance records device, runtime, peak memory,
+torch version, CUDA version, hostname, and git SHA. Six test files
+under \texttt{aether-3d/tests/benchmarks/} independently verify the
+audit boundary across the sweep harnesses.
+
+The 2.5D-stacking baseline (\texttt{linear-interp}) is a plain
+flanking-slice linear interpolation; the continuous-3D path uses the
+hybrid UOT coupling described in Section~\ref{sec:uot} together with a
+flow-matching velocity field and an ODE-integrated density-preserving
+sampler. The architecture is described once via the adapter contract so
+new methods plug in without changing the runner.
 
 \subsection{Hybrid UOT coupling}
 \label{sec:uot}
@@ -124,6 +148,22 @@ Both $\alpha_{\text{spatial}} \in [0, 1]$ and $\lambda_{\text{class}} \in
 defaults shipped). The $(\alpha, \lambda)$ ablation grid in
 Section~\ref{sec:res-ablation} quantifies the contribution of each
 component.
+
+\subsection{Training and inference protocol}
+\label{sec:training-protocol}
+
+The continuous-3D adapters expose a deterministic \texttt{fit / sample}
+contract: \texttt{fit} consumes the visible slices plus their physical-$z$
+labels and returns an adapter object; \texttt{sample(z)} returns the
+reconstructed AnnData at any in-range depth. The hardware-honest
+scaling harness (\texttt{aether\_3d.benchmarks.scaling}) records device,
+torch version, CUDA version, hostname, peak GPU memory, runtime, and
+git SHA per measurement, so a reviewer can re-run any single scaling
+point. Downstream cellular-neighborhood analysis
+(\texttt{aether\_3d.benchmarks.neighborhood}) computes radius-$R$
+distance-band enrichment and z-axis depth-binned density profiles
+around any query cell type, supporting the in-silico sectioning and
+co-localization analyses described in Section~\ref{sec:results}.
 
 \subsection{Metric quartet + topology}
 \label{sec:metrics}
