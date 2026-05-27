@@ -392,6 +392,15 @@ def test_serial_slice_dataset_requires_at_least_two_slices():
         SerialSliceTrajectoryDataset([adata], cfg)
 
 
+def test_serial_slice_dataset_rejects_empty_input():
+    # An empty list collapses to zero pairs the same way 1-slice input does,
+    # so the >=2 guard must also fire here rather than producing len==0 silently.
+    cfg = Aether3DConfig(hidden_size=8, depth=1, num_heads=2, patch_size=4)
+
+    with pytest.raises(ValueError, match=">=2 slices"):
+        SerialSliceTrajectoryDataset([], cfg)
+
+
 def test_serial_slice_dataset_uses_config_seed_for_uot_pairs():
     cfg = Aether3DConfig(
         seed=42,
@@ -436,6 +445,42 @@ def test_reconstruct_continuous_volume_does_not_duplicate_interior_z_planes():
     assert z_by_source[0] == {0.0, 5.0, 10.0}
     assert z_by_source[1] == {15.0, 20.0}
     assert z_by_source[0].isdisjoint(z_by_source[1])
+
+
+def test_reconstruct_continuous_volume_no_duplicate_z_scales_to_n_slices():
+    # Generalised regression for issue #14: every interior z-plane must be
+    # owned by exactly one source pair, regardless of how many slices are
+    # stacked. With n_slices=5 and num_depths=4 we should see 1 + 3 + 3 + 3
+    # = a sorted union without repeats across (i, i+1) intervals.
+    adata_list = _make_aether_slices(n_slices=5, n_cells=10, n_genes=8, seed=7)
+    cfg = Aether3DConfig(
+        seed=11,
+        hidden_size=8,
+        depth=1,
+        num_heads=2,
+        patch_size=4,
+        n_samples_base=10,
+        n_samples_volume=10,
+        thickness=4.0,
+    )
+    recon = AetherReconstructor(cfg)
+    recon.setup_data(adata_list)
+
+    volume = recon.reconstruct_continuous_volume(
+        adata_list, thickness=4.0, n_samples=10, num_depths=4
+    )
+
+    z_by_source = {
+        int(source): set(group["z_3d"].astype(float))
+        for source, group in volume.obs.groupby("source_slice")
+    }
+    # All-pairs disjointness: no z is owned by more than one source pair.
+    for i in z_by_source:
+        for j in z_by_source:
+            if i < j:
+                assert z_by_source[i].isdisjoint(z_by_source[j]), (
+                    f"interior z double-write between pair {i} and pair {j}"
+                )
 
 
 def test_reconstruct_continuous_volume_uses_config_seed_per_call():
