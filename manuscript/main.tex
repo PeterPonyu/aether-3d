@@ -296,6 +296,43 @@ per-virtual-slice quartet plus topology; (iii)~an interpretable UOT-cost
 component ablation; (iv)~a hardware-honest scaling harness that fails
 fast when the running torch cannot launch kernels on the visible GPU.
 
+\subsection{Limitations}
+
+Three limitations frame the present manuscript. First, the
+volume-adapter contract is exercised on a synthetic point cloud with
+regular inter-slice spacing; real-data sections (e.g., the BRCA IMC
+volume targeted by calendar Day~6+) carry irregular spacing, which
+shifts the burden onto the UOT cost function and the
+\texttt{maximal\_common\_region} helper introduced in this revision. The
+contract handles arbitrary spacing by construction, but evidence under
+real organ-boundary mutations and tissue tearing is not yet in scope.
+Second, the 2.5D vs continuous-3D distinction matters: our reconstruction
+operates on cells as discrete coordinates rather than a continuous
+volumetric field, which keeps memory predictable but means that
+sub-cellular structures (vascular lumens, axonal tracts) are not
+represented. Third, the vascular-network 3D-graph topology metrics ship
+as a callable module
+(\texttt{aether\_3d.benchmarks.graph\_3d}) but are exercised only on
+synthetic graphs; the DeepSpatial \S2.5 BRCA-IMC vascular demo waits
+for the Day~7 IMC volume.
+
+\subsection{Future work}
+
+The immediate next milestone is the calendar Day~6 BRCA IMC volume (see
+\texttt{docs/DATA\_PREP\_CALENDAR.md}), at which point the held-out
+virtual-slice benchmark moves from synthetic to real evidence and the
+distance-band neighborhood-heatmap composer skeleton at
+\texttt{aether-3d/manuscript/compose\_neighborhood\_heatmap.py} can be
+re-driven against real cellular neighborhoods. Subsequent days unlock
+the multi-planar (sagittal/coronal/horizontal) virtual-plane composer
+on real coordinates (Day~7) and the per-brain-region cell-type
+Spearman panel on the ABC mouse-brain section ladder (Day~8). The
+39-million-cell whole-atlas reconstruction reported by DeepSpatial \S2.5
+is cited rather than reproduced; we scale gradually section by section
+from the calendar Day~2 anchor (section C57BL6J-638850.31). Each
+transition is gated by the claim-ledger update described above; no
+claim graduates without linked evidence.
+
 \section*{Data and code availability}
 
 Source code, tests, and the benchmark contract live in the Aether3D
