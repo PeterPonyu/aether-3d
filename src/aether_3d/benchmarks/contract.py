@@ -300,8 +300,8 @@ def _chamfer_distance(a: np.ndarray, b: np.ndarray) -> float:
     if a.size == 0 or b.size == 0:
         return float("nan")
     # nearest-neighbor distances, both directions
-    d_ab = np.min(_pairwise_sq(a, b), axis=1)
-    d_ba = np.min(_pairwise_sq(b, a), axis=1)
+    d_ab = _nearest_sq(a, b)
+    d_ba = _nearest_sq(b, a)
     return float(0.5 * (np.sqrt(d_ab).mean() + np.sqrt(d_ba).mean()))
 
 
@@ -309,11 +309,30 @@ def _coord_rmse(a: np.ndarray, b: np.ndarray) -> float:
     """RMSE of nearest-neighbor distances from a→b (one-sided)."""
     if a.size == 0 or b.size == 0:
         return float("nan")
-    d = np.sqrt(np.min(_pairwise_sq(a, b), axis=1))
+    d = np.sqrt(_nearest_sq(a, b))
     return float(np.sqrt(np.mean(d ** 2)))
 
 
+def _nearest_sq(a: np.ndarray, b: np.ndarray) -> np.ndarray:
+    """Nearest-neighbor squared Euclidean distances without N×M×D materialization."""
+    try:
+        from scipy.spatial import cKDTree
+
+        distances, _ = cKDTree(b).query(a, k=1)
+        return np.square(distances)
+    except Exception:
+        # Dependency-light fallback for environments without scipy: chunk the
+        # pairwise matrix so memory scales with chunk_size×M instead of N×M×D.
+        out = np.empty(a.shape[0], dtype=np.float64)
+        chunk_size = max(1, min(1024, a.shape[0]))
+        for start in range(0, a.shape[0], chunk_size):
+            stop = min(start + chunk_size, a.shape[0])
+            diff = a[start:stop, None, :] - b[None, :, :]
+            out[start:stop] = np.min(np.sum(diff * diff, axis=-1), axis=1)
+        return out
+
+
 def _pairwise_sq(a: np.ndarray, b: np.ndarray) -> np.ndarray:
-    """Pairwise squared Euclidean distance."""
+    """Pairwise squared Euclidean distance; kept for small-test compatibility."""
     diff = a[:, None, :] - b[None, :, :]
     return (diff * diff).sum(axis=-1)

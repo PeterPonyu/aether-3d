@@ -29,11 +29,8 @@ jobs:
 
     - name: Run tests
       run: |
-        # PYTHONPATH=src:. so Python finds aether_3d (src/) AND
-        # scripts.* (repo root) — the tests/data/* suite imports
-        # `from scripts.data import …` which requires repo root on sys.path.
-        PYTHONPATH=src:. pytest
+        pytest
 
     - name: Run bounded synthetic E2E smoke
       run: |
-        PYTHONPATH=src:. python scripts/e2e/verify_aether_pipeline.py
+        python scripts/e2e/verify_aether_pipeline.py

@@ -1,0 +1,24 @@
+{
+    "dataset_shape_train": [
+        [
+            429,
+            32
+        ],
+        [
+            324,
+            32
+        ]
+    ],
+    "dataset_shape_heldout": [
+        386,
+        32
+    ],
+    "virtual_slice_shape": [
+        324,
+        32
+    ],
+    "gene_profile_pearson": 0.9111174941062927,
+    "gene_profile_mse": 71.61453247070312,
+    "cell_level_mean_pearson": 0.19835573434829712,
+    "cell_level_mean_mse": 9996.2705078125
+}
