@@ -238,6 +238,79 @@ def celltype_distribution_cosine(
     return float(np.dot(t, r) / (nt * nr))
 
 
+def virtual_plane(
+    volume_adata: ad.AnnData,
+    axis: str,
+    target: float,
+    eps: float = 0.5,
+    spatial_key: str = "spatial",
+    physical_z_key: str = "physical_z_um",
+) -> ad.AnnData:
+    """Extract a virtual planar slice along an arbitrary axis (x, y, or z).
+
+    Round 12 W005 — generalizes `virtual_slice_at_depth` to support
+    sagittal (yz-plane, axis='x'), coronal (xz-plane, axis='y'), and
+    horizontal (xy-plane, axis='z') sectioning, matching DeepSpatial
+    §2.6 multi-planar virtual slicing.
+
+    The xy coordinates come from `obsm[spatial_key]` (shape (N, 2));
+    the z coordinate comes from `obs[physical_z_key]`. For axis='x'
+    or 'y' the helper slices in the spatial plane; for axis='z' it
+    delegates to the same logic as `virtual_slice_at_depth`.
+
+    Args:
+        volume_adata: 3D volume AnnData with `obsm[spatial_key]` (xy)
+            and `obs[physical_z_key]` (z).
+        axis: 'x', 'y', or 'z' — the axis perpendicular to the slice.
+        target: target coordinate value on `axis`.
+        eps: half-width of the slab around `target`.
+        spatial_key: key for the (N, 2) xy coords in `obsm`.
+        physical_z_key: obs column carrying z-coords.
+
+    Returns:
+        AnnData filtered to the slab; `.uns["virtual_plane"]` carries
+        axis, target, eps, n_cells_in_slab.
+
+    Raises:
+        KeyError on missing obsm/obs entries.
+        ValueError on bad axis or non-positive eps.
+    """
+    if axis not in ("x", "y", "z"):
+        raise ValueError(f"axis must be one of 'x','y','z', got {axis!r}")
+    if eps <= 0:
+        raise ValueError(f"eps must be positive, got {eps}")
+
+    if axis == "z":
+        if physical_z_key not in volume_adata.obs.columns:
+            raise KeyError(
+                f"obs column {physical_z_key!r} missing; "
+                f"have: {sorted(volume_adata.obs.columns)[:8]}"
+            )
+        coord = np.asarray(volume_adata.obs[physical_z_key].values, dtype=np.float64)
+    else:
+        if spatial_key not in volume_adata.obsm:
+            raise KeyError(
+                f"obsm[{spatial_key!r}] missing; "
+                f"have: {sorted(volume_adata.obsm.keys())[:8]}"
+            )
+        xy = np.asarray(volume_adata.obsm[spatial_key], dtype=np.float64)
+        if xy.ndim != 2 or xy.shape[1] < 2:
+            raise ValueError(f"obsm[{spatial_key!r}] must be (N, 2), got {xy.shape}")
+        coord = xy[:, 0] if axis == "x" else xy[:, 1]
+
+    mask = np.abs(coord - float(target)) <= eps
+    sliced = volume_adata[mask].copy()
+    sliced.uns["virtual_plane"] = {
+        "axis": axis,
+        "target": float(target),
+        "eps": float(eps),
+        "n_cells_in_slab": int(mask.sum()),
+        "spatial_key": spatial_key,
+        "physical_z_key": physical_z_key,
+    }
+    return sliced
+
+
 def virtual_slice_at_depth(
     volume_adata: ad.AnnData,
     z_target: float,
