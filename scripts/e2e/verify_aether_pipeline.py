@@ -97,6 +97,7 @@ def main():
         batch_size=64,
         max_epochs=2,
         n_samples_base=2000,
+        n_samples_volume=2000,
     )
 
     dataset = SerialSliceTrajectoryDataset(adatas, cfg)
