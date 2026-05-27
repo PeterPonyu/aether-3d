@@ -54,8 +54,16 @@ def render_neighborhood_heatmap(
         raise ValueError("enrichment_matrix shape != (len(row_labels), len(col_labels))")
 
     finite = matrix[np.isfinite(matrix)]
-    vmin = float(min(finite.min(), 1.0 / max(finite.max(), 1e-9))) if finite.size else 0.5
-    vmax = float(max(finite.max(), 1.0 / max(finite.min(), 1e-9))) if finite.size else 2.0
+    if finite.size:
+        vmin = float(min(finite.min(), 1.0 / max(finite.max(), 1e-9)))
+        vmax = float(max(finite.max(), 1.0 / max(finite.min(), 1e-9)))
+        if not (vmin < 1.0 < vmax):
+            delta = max(abs(vmax - 1.0), abs(1.0 - vmin), 0.1)
+            vmin = 1.0 - delta
+            vmax = 1.0 + delta
+    else:
+        vmin = 0.5
+        vmax = 2.0
     norm = mcolors.TwoSlopeNorm(vmin=vmin, vcenter=1.0, vmax=vmax)
 
     fig, ax = plt.subplots(figsize=(0.6 * len(col_labels) + 3,
