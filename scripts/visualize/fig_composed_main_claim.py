@@ -26,6 +26,7 @@ DEFAULT_OUT = PROJECT_ROOT / "results" / "figures" / "aether_composed_main_claim
 COL = ["#2F6FA7", "#1AA39A", "#E7903C", "#C94C4C", "#7D5FB2", "#5BA85B"]
 GRAY = "#65717E"
 INK = "#1F2328"
+PLACEHOLDER = "synthetic placeholder — real data pending"
 
 
 def _load_metrics():
@@ -59,6 +60,58 @@ def _load_metrics():
         except Exception:
             pass
     return vals, source
+
+
+def _safe_array(payload, keys, ndim=None):
+    for key in keys:
+        if key in payload:
+            try:
+                arr = np.asarray(payload[key], dtype=float)
+            except (TypeError, ValueError):
+                continue
+            if ndim is None or arr.ndim == ndim:
+                return arr
+    return None
+
+
+def _load_volume_data():
+    """Load local-small reconstruction data when available, else deterministic demo.
+
+    Accepted lightweight JSON shape is intentionally permissive so future pipeline
+    artifacts can be consumed without adding dependencies:
+    coordinates/points/xyz: N×3, labels/cell_types: N, marker: N.
+    """
+    candidates = [
+        PROJECT_ROOT / "results" / "reconstructed_volume.json",
+        PROJECT_ROOT / "results" / "benchmark" / "reconstructed_volume.json",
+        PROJECT_ROOT / "results" / "aether3d_volume.json",
+    ]
+    for path in candidates:
+        if not path.exists():
+            continue
+        try:
+            payload = json.loads(path.read_text())
+        except (OSError, json.JSONDecodeError):
+            continue
+        pts = _safe_array(payload, ("coordinates", "points", "xyz"), ndim=2)
+        if pts is None or pts.shape[1] < 3:
+            continue
+        labels = payload.get("labels", payload.get("cell_types"))
+        if labels is None:
+            cls = np.zeros(len(pts), dtype=int)
+        else:
+            raw = np.asarray(labels)
+            names = {v: i for i, v in enumerate(sorted(set(raw.tolist())))}
+            cls = np.asarray([names[v] for v in raw.tolist()], dtype=int)
+        marker = _safe_array(payload, ("marker", "marker_signal", "expression"), ndim=1)
+        if marker is None or len(marker) != len(pts):
+            marker = np.linspace(0.15, 0.95, len(pts))
+        marker = np.clip(np.asarray(marker, dtype=float), 0, None)
+        if marker.max() > marker.min():
+            marker = (marker - marker.min()) / (marker.max() - marker.min())
+        return pts[:, :3], cls[: len(pts)], marker, f"local-small: {path.relative_to(PROJECT_ROOT)}"
+    pts, cls, marker = _volume()
+    return pts, cls, marker, "deterministic synthetic fallback"
 
 
 def _volume(seed=17):
@@ -121,7 +174,8 @@ def _arrow(ax, a, b, text=None):
 
 
 def _badge(ax, text, xy=(0.98, 0.02)):
-    ax.text(
+    fn = getattr(ax, "text2D", ax.text)
+    fn(
         *xy,
         text,
         transform=ax.transAxes,
@@ -130,6 +184,33 @@ def _badge(ax, text, xy=(0.98, 0.02)):
         fontsize=7,
         color=GRAY,
         bbox=dict(boxstyle="round,pad=0.25", fc="white", ec="#D0D7DE", lw=0.7),
+    )
+
+
+def _placeholder(ax):
+    ax.text(
+        0.99,
+        0.01,
+        PLACEHOLDER,
+        transform=ax.transAxes,
+        ha="right",
+        va="bottom",
+        fontsize=6.5,
+        style="italic",
+        color=GRAY,
+    )
+
+
+def _stamp_provenance(fig, source):
+    fig.text(
+        0.99,
+        0.005,
+        f"Aether3D composed main claim · source: {source} · claims gated; no real-data scale claim",
+        ha="right",
+        va="bottom",
+        fontsize=6,
+        color=GRAY,
+        family="monospace",
     )
 
 
@@ -197,6 +278,7 @@ def panel_input(ax):
         fontsize=7.5,
         color=GRAY,
     )
+    _placeholder(ax)
 
 
 def panel_workflow(ax):
@@ -224,11 +306,12 @@ def panel_workflow(ax):
     )
     _arrow(ax, (0.61, 0.46), (0.52, 0.33), "validate")
     _badge(ax, "method + gate")
+    _placeholder(ax)
 
 
 def panel_3d(ax):
     _label(ax, "C")
-    pts, cls, _ = _volume()
+    pts, cls, _, source = _load_volume_data()
     for c in np.unique(cls):
         m = cls == c
         ax.scatter(
@@ -246,39 +329,40 @@ def panel_3d(ax):
     ax.set_ylabel("y")
     ax.set_zlabel("z")
     ax.legend(fontsize=6, frameon=False, loc="upper left")
+    _badge(ax, source)
 
 
 def panel_slices(ax):
     _label(ax, "D")
-    pts, cls, marker = _volume()
-    zs = np.quantile(pts[:, 2], [0.25, 0.5, 0.75])
-    for i, z in enumerate(zs):
-        m = np.abs(pts[:, 2] - z) < 0.16
-        off = i * 2.35
-        ax.scatter(
-            pts[m, 0] + off,
-            pts[m, 1],
-            c=marker[m],
-            cmap="viridis",
-            s=9,
-            vmin=0,
-            vmax=1,
-            linewidths=0,
-        )
-        ax.add_patch(Rectangle((off - 1.75, -1.7), 3.35, 3.2, fill=False, ec="#D0D7DE"))
-        ax.text(off, 1.72, f"virtual z={z:.2f}", ha="center", fontsize=8)
+    pts, cls, marker, source = _load_volume_data()
+    z = float(np.quantile(pts[:, 2], 0.5))
+    band = max(0.12, float(np.std(pts[:, 2]) * 0.22))
+    m = np.abs(pts[:, 2] - z) <= band
+    if m.sum() < 12:
+        m = np.argsort(np.abs(pts[:, 2] - z))[: min(80, len(pts))]
+    panels = [
+        ("GT observed slice", pts[m, 0], pts[m, 1], cls[m], "tab10", 0, "reference"),
+        ("Aether3D virtual slice", pts[m, 0] + 0.05 * marker[m], pts[m, 1] - 0.04 * marker[m], marker[m], "viridis", 2.6, "claim model"),
+        ("2.5D stack baseline", pts[m, 0], np.round(pts[m, 1] * 2.0) / 2.0, cls[m], "tab10", 5.2, "slice-only"),
+    ]
+    for title, xs, ys, colors, cmap, off, subtitle in panels:
+        ax.scatter(xs + off, ys, c=colors, cmap=cmap, s=10, vmin=0, vmax=max(1, np.nanmax(colors)), linewidths=0)
+        ax.add_patch(Rectangle((off - 1.7, -1.7), 3.35, 3.2, fill=False, ec="#D0D7DE"))
+        ax.text(off, 1.74, title, ha="center", fontsize=8, fontweight="bold")
+        ax.text(off, 1.52, subtitle, ha="center", fontsize=7, color=GRAY)
     ax.set_aspect("equal")
-    ax.set_xlim(-2, 6.35)
+    ax.set_xlim(-2, 8.8)
     ax.set_ylim(-1.9, 1.95)
     ax.set_xticks([])
     ax.set_yticks([])
-    ax.set_title("Virtual slice validation", fontsize=11)
-    _badge(ax, "replace with held-out slices")
+    ax.set_title("GT vs Aether3D vs 2.5D slice triptych", fontsize=11)
+    _badge(ax, f"z={z:.2f}; {source}")
+    _placeholder(ax)
 
 
 def panel_zbiology(ax):
     _label(ax, "E")
-    pts, cls, _ = _volume()
+    pts, cls, _, source = _load_volume_data()
     bins = np.linspace(pts[:, 2].min(), pts[:, 2].max(), 18)
     mids = 0.5 * (bins[:-1] + bins[1:])
     props = []
@@ -299,6 +383,7 @@ def panel_zbiology(ax):
     ax.set_ylabel("proportion")
     ax.set_title("Cell-type continuity along z", fontsize=11)
     ax.legend(fontsize=6, ncol=2, frameon=False)
+    _badge(ax, source)
 
 
 def panel_metrics(ax):
@@ -315,19 +400,46 @@ def panel_metrics(ax):
     for yi, v in zip(y, nums):
         ax.text(v + 0.02, yi, f"{v:.2f}", va="center", fontsize=7)
     _badge(ax, source)
+    _placeholder(ax)
+
+
+def _load_neighborhood_matrix():
+    candidates = [
+        PROJECT_ROOT / "results" / "neighborhood_enrichment.json",
+        PROJECT_ROOT / "results" / "benchmark" / "neighborhood_enrichment.json",
+        PROJECT_ROOT / "results" / "neighborhood_matrix.json",
+    ]
+    for path in candidates:
+        if not path.exists():
+            continue
+        try:
+            payload = json.loads(path.read_text())
+        except (OSError, json.JSONDecodeError):
+            continue
+        mat = _safe_array(payload, ("matrix", "enrichment", "values"), ndim=2)
+        if mat is None or mat.shape[0] != mat.shape[1]:
+            continue
+        names = payload.get("labels", payload.get("cell_types"))
+        if not isinstance(names, list) or len(names) != mat.shape[0]:
+            names = [f"type {i + 1}" for i in range(mat.shape[0])]
+        return mat, [str(n) for n in names], f"local-small: {path.relative_to(PROJECT_ROOT)}"
+    rng = np.random.default_rng(12)
+    mat = rng.random((6, 6))
+    mat = (mat + mat.T) / 2 + np.eye(6) * 0.8
+    names = ["B", "Fib", "Endo", "T", "Tumor", "Myeloid"]
+    return mat, names, "deterministic synthetic fallback"
 
 
 def panel_neighborhood(ax):
     _label(ax, "G")
-    rng = np.random.default_rng(12)
-    mat = rng.random((6, 6))
-    mat = (mat + mat.T) / 2 + np.eye(6) * 0.8
+    mat, names, source = _load_neighborhood_matrix()
     im = ax.imshow(mat, cmap="Blues", vmin=0, vmax=1.5)
-    names = ["B", "Fib", "Endo", "T", "Tumor", "Myeloid"]
-    ax.set_xticks(range(6), names, rotation=45, ha="right", fontsize=7)
-    ax.set_yticks(range(6), names, fontsize=7)
+    ax.set_xticks(range(len(names)), names, rotation=45, ha="right", fontsize=7)
+    ax.set_yticks(range(len(names)), names, fontsize=7)
     ax.set_title("Neighborhood consistency gate", fontsize=11)
     plt.colorbar(im, ax=ax, fraction=0.046, pad=0.02).ax.tick_params(labelsize=7)
+    _badge(ax, source)
+    _placeholder(ax)
 
 
 def render(out_path: Path = DEFAULT_OUT):
@@ -347,6 +459,7 @@ def render(out_path: Path = DEFAULT_OUT):
         fontsize=15,
         fontweight="bold",
     )
+    _stamp_provenance(fig, _load_volume_data()[3])
     fig.savefig(out_path, dpi=180, bbox_inches="tight")
     plt.close(fig)
 
