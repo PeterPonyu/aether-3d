@@ -486,6 +486,58 @@ def test_uot_pytorch_warns_and_stays_finite_on_underflow_risk():
     assert torch.all(weights >= 0)
 
 
+def test_aether_reconstructor_fit_is_reproducible_across_runs(tmp_path):
+    """End-to-end reproducibility regression for #24 + #26: two fresh
+    fit() runs against identical data with the same cfg.seed must
+    produce identical first-step train loss values."""
+
+    def _build_adatas(seed: int = 9):
+        rng = np.random.default_rng(seed)
+        adata_list = []
+        for z in (0.0, 1.0):
+            adata = ad.AnnData(
+                X=rng.normal(size=(6, 8)).astype(np.float32),
+                obs={
+                    "cell_class": ["T", "B", "T", "B", "T", "B"],
+                    "z_coord": [z] * 6,
+                },
+            )
+            adata.obsm["spatial"] = rng.normal(size=(6, 2)).astype(np.float32)
+            adata_list.append(adata)
+        return adata_list
+
+    def _train_once(out_dir):
+        cfg = Aether3DConfig(
+            seed=42,
+            n_samples_base=6,
+            batch_size=2,
+            max_epochs=1,
+            num_workers=0,
+            hidden_size=16,
+            depth=1,
+            num_heads=2,
+            patch_size=4,
+            output_dir=out_dir,
+        )
+        recon = AetherReconstructor(cfg)
+        recon.setup_data(_build_adatas())
+        trainer = pl.Trainer(
+            fast_dev_run=1,
+            accelerator="cpu",
+            logger=False,
+            enable_checkpointing=False,
+            enable_model_summary=False,
+        )
+        recon.fit(trainer=trainer)
+        return float(trainer.callback_metrics["train_loss"].item())
+
+    loss_a = _train_once(tmp_path / "run_a")
+    loss_b = _train_once(tmp_path / "run_b")
+    assert loss_a == pytest.approx(loss_b, abs=1e-6), (
+        f"fit() with cfg.seed=42 must be reproducible; got {loss_a} vs {loss_b}"
+    )
+
+
 def test_verify_aether_pipeline_data_root_is_repo_local():
     from pathlib import Path
     import scripts.e2e.verify_aether_pipeline as verify
