@@ -172,7 +172,8 @@ figures will replace them once a serial-section dataset graduates.}
   \includegraphics[width=\textwidth]{figures/fig_holdout_quartet.pdf}
   \caption{Virtual-slice holdout: seven-metric quartet for the two
   always-available baselines on a synthetic 5-slice stack with the
-  middle slice held out.
+  middle slice held out. Adapter color is stable across all three
+  figures (\texttt{aether-3d/manuscript/compose\_palette.py}).
   \textbf{a}, Chamfer distance ($\downarrow$).
   \textbf{b}, coordinate RMSE ($\downarrow$).
   \textbf{c}, sliced 2D Wasserstein ($\downarrow$).
@@ -180,6 +181,10 @@ figures will replace them once a serial-section dataset graduates.}
   \textbf{e}, domain ARI ($\uparrow$).
   \textbf{f}, domain NMI ($\uparrow$).
   \textbf{g}, Betti-0 stability via kNN union-find ($\uparrow$).
+  \textbf{h}, direction-corrected seven-metric radar; lower-is-better
+  metrics are mapped via $1/(1{+}x)$ and every axis is min-max normalized
+  across adapters so the outer envelope = best. One polygon per adapter
+  exposes overall reconstruction quality at-a-glance.
   Source: \texttt{aether-3d/results/benchmark/synthetic\_holdout.json}.}
   \label{fig:holdout}
 \end{figure}
@@ -203,6 +208,13 @@ prose without overstating biology.
   \textbf{a}, top-1 coupling accuracy ($\uparrow$) as a heatmap over the
   $(\alpha_{\text{spatial}}, \lambda_{\text{class}})$ grid.
   \textbf{b}, mean true-pair mass ($\uparrow$) over the same grid.
+  \textbf{c}, marginal trace of top-1 accuracy along
+  $\lambda_{\text{class}}$ at the central $\alpha_{\text{spatial}}$ slice
+  (log-$x$).
+  \textbf{d}, marginal trace along $\alpha_{\text{spatial}}$ at the
+  central $\lambda_{\text{class}}$ slice. The two marginals quantify the
+  slope of the response surface without requiring the reader to
+  re-read the heatmap rows.
   Source: \texttt{aether-3d/results/benchmark/uot\_ablation.json}.}
   \label{fig:ablation}
 \end{figure}
