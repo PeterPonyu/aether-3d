@@ -233,18 +233,17 @@ class AetherReconstructor:
                 n_current = x_start.shape[0]
                 ys = torch.zeros(n_current, dtype=torch.long)
 
-                # ODE integration from t=0 to t=d using adaptive dopri5 solver
+                # ODE integration from t=0 to t=d using adaptive dopri5 solver.
+                # ode() returns identity when t0 == t1 (see #15), so depth 0
+                # no longer needs a caller-side branch.
                 concat_start = torch.cat([x_start, g_start, c_start], dim=1)
-                if d > 0:
-                    integrator = ode(
-                        drift=make_drift(ys),
-                        t0=0.0,
-                        t1=float(d),
-                        solver_type="dopri5",
-                    )
-                    concat_end = integrator(concat_start)
-                else:
-                    concat_end = concat_start  # depth 0: identity (source slice)
+                integrator = ode(
+                    drift=make_drift(ys),
+                    t0=0.0,
+                    t1=float(d),
+                    solver_type="dopri5",
+                )
+                concat_end = integrator(concat_start)
 
                 new_x = concat_end[:, :spatial_dim]
                 new_g = concat_end[:, spatial_dim : spatial_dim + gene_dim]
