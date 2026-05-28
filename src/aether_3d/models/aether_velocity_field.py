@@ -101,7 +101,7 @@ from numpy.typing import NDArray
 
 def get_1d_sincos_pos_embed_from_grid(embed_dim: int, pos: NDArray[np.floating]) -> NDArray[np.floating]:
     assert embed_dim % 2 == 0
-    omega = np.arange(embed_dim // 2, dtype=np.float64)
+    omega: NDArray[np.float64] = np.arange(embed_dim // 2, dtype=np.float64)
     omega /= embed_dim / 2.
     omega = 1. / 10000**omega
     pos = pos.reshape(-1)
