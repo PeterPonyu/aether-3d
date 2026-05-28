@@ -8,7 +8,7 @@ It mirrors the role of LuminaImputer but for serial slice → continuous 3D volu
 from __future__ import annotations
 
 import random
-from typing import List
+from typing import Any, Callable, List
 
 import anndata as ad
 import numpy as np
@@ -44,11 +44,11 @@ class AetherReconstructor:
 
     def __init__(self, config: Aether3DConfig):
         self.cfg = config
-        self.model = None
-        self.dataset = None
+        self.model: MultiModalVelocityField | None = None
+        self.dataset: SerialSliceTrajectoryDataset | None = None
         self._rng = np.random.default_rng(config.seed)
 
-    def setup_data(self, adata_list: List[ad.AnnData]):
+    def setup_data(self, adata_list: List[ad.AnnData]) -> None:
         pl.seed_everything(self.cfg.seed, workers=True)
         self.dataset = SerialSliceTrajectoryDataset(adata_list, self.cfg)
         # Infer dims
@@ -67,7 +67,7 @@ class AetherReconstructor:
             num_heads=self.cfg.num_heads,
         )
 
-    def fit(self, trainer: pl.Trainer | None = None, **kwargs):
+    def fit(self, trainer: pl.Trainer | None = None, **kwargs: Any) -> pl.Trainer:
         if self.dataset is None:
             raise RuntimeError("Call setup_data first")
         model = self.model
@@ -202,8 +202,12 @@ class AetherReconstructor:
             n_available = len(src_np)
 
             # ODE drift factory: wraps the velocity field as dx/dt = v(state, t, y)
-            def make_drift(class_cond):
-                def drift_fn(concat_state, t_vals):
+            def make_drift(
+                class_cond: torch.Tensor,
+            ) -> Callable[[torch.Tensor, torch.Tensor], torch.Tensor]:
+                def drift_fn(
+                    concat_state: torch.Tensor, t_vals: torch.Tensor
+                ) -> torch.Tensor:
                     x_part = concat_state[:, :spatial_dim]
                     g_part = concat_state[:, spatial_dim : spatial_dim + gene_dim]
                     c_part = concat_state[:, spatial_dim + gene_dim :]
@@ -298,7 +302,7 @@ class AetherReconstructor:
         )
         return volume
 
-    def _get_onehot(self, adata, indices):
+    def _get_onehot(self, adata: ad.AnnData, indices: np.ndarray) -> np.ndarray:
         """Helper to get one-hot cell classes."""
         labels = adata.obs[self.cfg.label_key].iloc[indices].astype(str).values
         if self.dataset is not None and hasattr(self.dataset, "label_encoder"):

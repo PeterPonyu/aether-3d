@@ -23,13 +23,13 @@ from __future__ import annotations
 
 import enum
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, Optional, Tuple
+from typing import Any, Callable, Dict, Optional, Tuple, cast
 
 import torch
 import torch.nn as nn
 
 from .path import InterpolationPath, get_path
-from .integrators import ode
+from .integrators import SolverType, ode
 from .utils import expand_time_like_data, mean_flat
 
 
@@ -103,11 +103,13 @@ class FlowTransport:
     # ------------------------------------------------------------------
     # Drift / score functions for sampling
     # ------------------------------------------------------------------
-    def get_drift(self, model: nn.Module, **model_kwargs) -> Callable:
+    def get_drift(
+        self, model: nn.Module, **model_kwargs: Any
+    ) -> Callable[[torch.Tensor, torch.Tensor], torch.Tensor]:
         """Return a callable (x, t) -> velocity that the integrators can use."""
         def drift(x: torch.Tensor, t: torch.Tensor) -> torch.Tensor:
             t = expand_time_like_data(t, x)
-            return model(x, t, **model_kwargs)
+            return cast(torch.Tensor, model(x, t, **model_kwargs))
         return drift
 
     # ------------------------------------------------------------------
@@ -178,14 +180,14 @@ class FlowSampler:
             t0=0.0,
             t1=1.0,
             num_steps=num_steps,
-            solver_type=solver,
+            solver_type=cast(SolverType, solver),
             atol=atol,
             rtol=rtol,
         )
         return integrator(x)
 
     # SDE sampling (for diversity or likelihood evaluation)
-    def sample_sde(self, **kwargs) -> torch.Tensor:
+    def sample_sde(self, **kwargs: Any) -> torch.Tensor:
         # Similar pattern – the concrete SDE logic lives in integrators.sde
         raise NotImplementedError("SDE sampling will be added in Phase 1.1")
 
@@ -202,7 +204,7 @@ def create_flow_transport(
 ) -> FlowTransport:
     """Create a FlowTransport with sensible defaults for biology-scale data."""
 
-    path_obj = get_path(path)  # type: ignore[arg-type]
+    path_obj = get_path(path)
 
     pred = PredictionTarget(prediction)
     lw = LossWeighting.NONE if loss_weight is None else LossWeighting(loss_weight)
