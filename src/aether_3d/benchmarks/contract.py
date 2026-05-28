@@ -296,7 +296,9 @@ def compute_volume_metrics(volume: ad.AnnData, inp: VolumeAdapterInput) -> dict[
     return metrics
 
 
-def _compute_topology(volume_slice, truth, spatial_key):
+def _compute_topology(
+    volume_slice: ad.AnnData, truth: ad.AnnData, spatial_key: str
+) -> dict[str, Any]:
     """Thin wrapper that pulls only the no-velocity metrics for per-slice scoring."""
     from .topology import betti_zero_stability
 
@@ -307,7 +309,12 @@ def _compute_topology(volume_slice, truth, spatial_key):
     return {"betti0_stability": betti_zero_stability(t_coords, v_coords)}
 
 
-def _compute_quartet(volume_slice, truth, spatial_key, label_key):
+def _compute_quartet(
+    volume_slice: ad.AnnData,
+    truth: ad.AnnData,
+    spatial_key: str,
+    label_key: Optional[str],
+) -> dict[str, Any]:
     """Thin wrapper to keep the import local and contract.py independent of metrics.py."""
     from .metrics import geometry_quartet
 
@@ -343,7 +350,7 @@ def _nearest_sq(a: np.ndarray, b: np.ndarray) -> np.ndarray:
         from scipy.spatial import cKDTree
 
         distances, _ = cKDTree(b).query(a, k=1)
-        return np.square(distances)
+        return np.asarray(np.square(distances))
     except Exception:
         # Dependency-light fallback for environments without scipy: chunk the
         # pairwise matrix so memory scales with chunk_size×M instead of N×M×D.
@@ -359,4 +366,4 @@ def _nearest_sq(a: np.ndarray, b: np.ndarray) -> np.ndarray:
 def _pairwise_sq(a: np.ndarray, b: np.ndarray) -> np.ndarray:
     """Pairwise squared Euclidean distance; kept for small-test compatibility."""
     diff = a[:, None, :] - b[None, :, :]
-    return (diff * diff).sum(axis=-1)
+    return np.asarray((diff * diff).sum(axis=-1))

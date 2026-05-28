@@ -7,9 +7,10 @@ Clean re-implementation of the baseline serial-slice trajectory dataset logic.
 
 from __future__ import annotations
 
-from typing import List
+from typing import Any, Dict, List, Tuple
 
 import numpy as np
+import pandas as pd
 import scanpy as sc
 import torch
 from sklearn.preprocessing import LabelEncoder
@@ -19,7 +20,7 @@ from ..coupling.uot import compute_hybrid_cost, compute_uot_coupling
 from ..config.aether_config import Aether3DConfig
 
 
-class SerialSliceTrajectoryDataset(Dataset):
+class SerialSliceTrajectoryDataset(Dataset[Dict[str, torch.Tensor]]):
     """
     Dataset that turns a list of ordered 2D spatial slices into
     (x0, g0, c0, z0) <-> (x1, g1, c1, z1) trajectory pairs via UOT.
@@ -50,13 +51,13 @@ class SerialSliceTrajectoryDataset(Dataset):
 
         self._build_trajectories()
 
-    def _build_trajectories(self):
+    def _build_trajectories(self) -> None:
         if len(self.adata_list) < 2:
             raise ValueError(
                 "SerialSliceTrajectoryDataset requires at least two slices; "
                 "single-slice input cannot define cross-slice trajectories."
             )
-        self.pairs = []
+        self.pairs: List[Tuple[int, Any, int, Any]] = []
         for i in range(len(self.adata_list) - 1):
             ad0 = self.adata_list[i]
             ad1 = self.adata_list[i + 1]
@@ -81,15 +82,15 @@ class SerialSliceTrajectoryDataset(Dataset):
             for s, t in zip(src, tgt):
                 self.pairs.append((i, s, i + 1, t))
 
-    def _onehot(self, labels):
+    def _onehot(self, labels: pd.Series) -> np.ndarray:
         encoded = self.label_encoder.transform(labels.astype(str))
         n_classes = len(self.label_encoder.classes_)
-        return np.eye(n_classes)[encoded]
+        return np.asarray(np.eye(n_classes)[encoded])
 
-    def __len__(self):
+    def __len__(self) -> int:
         return len(self.pairs)
 
-    def __getitem__(self, idx):
+    def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
         i0, s, i1, t = self.pairs[idx]
         ad0 = self.adata_list[i0]
         ad1 = self.adata_list[i1]
