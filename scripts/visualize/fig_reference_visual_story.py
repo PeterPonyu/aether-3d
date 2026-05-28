@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Clean-room Aether3D manuscript visualization storyboard.
 
-This figure is informed by reading the supplied DEEPSPATIAL PDF, but it does
+This figure is informed by reading the baseline reference paper, but it does
 not copy source artwork, captions, logos, or panel wording.  It translates the
 observed visual logic into repository-specific Aether3D panels: serial-slice to
 continuous-volume schematic, virtual slicing, z-depth composition, marker

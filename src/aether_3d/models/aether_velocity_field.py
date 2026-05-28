@@ -5,7 +5,7 @@ This is the 3D reconstruction counterpart to LuminaTransformer.
 It predicts a joint velocity vector field over (spatial coords, gene expression, cell class)
 conditioned on time and slice metadata.
 
-Fresh implementation — no code copied from the original DeepSpatial GiT multi-stream version.
+Fresh implementation — no code copied from the baseline reference implementation.
 """
 
 from __future__ import annotations

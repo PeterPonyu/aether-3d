@@ -18,6 +18,6 @@ The mathematical core (flow primitives from Phase 1) is already shared.
 Full ODE integration, pruning, AnnData 3D volume assembly, and Lightning training module for the multi-modal case are the remaining pieces (very similar in complexity to what was done for LuminaST Phase 2).
 
 ## Leakage note
-All files written with fresh names and docstrings. No "DeepSpatial", "GiT", original author references, or paper titles present.
+All files written with fresh names and docstrings. No baseline brand names, identifier leakage, or paper titles present.
 
 Ready for the user-requested verification pass + making LuminaST runnable.

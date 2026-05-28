@@ -2,7 +2,7 @@
 SerialSliceTrajectoryDataset for Aether3D.
 
 Builds cross-slice cell trajectories using UOT, ready for multi-modal flow matching.
-Clean re-implementation of the original DeepSpatialDataset logic.
+Clean re-implementation of the baseline serial-slice trajectory dataset logic.
 """
 
 from __future__ import annotations

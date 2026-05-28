@@ -4,7 +4,7 @@
 This is a figure-level logic chain: serial 2D slices become a claim-gated
 continuous 3D reconstruction, then virtual slices, z-depth biology, metrics,
 and neighborhood structure gate any fidelity/scale claims. Clean-room inspired
-by the supplied DEEPSPATIAL paper's figure grammar without copying artwork.
+by the baseline reference's figure grammar without copying artwork.
 """
 
 from __future__ import annotations

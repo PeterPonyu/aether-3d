@@ -1,9 +1,9 @@
 """Maximal common spatial region across multi-section slices.
 
-Round 13 W004 — closes the DeepSpatial §2.4 (openST irregular inter-slice
-spacing) helper gap. When sections of a 3D volume have different lateral
-footprints, downstream metrics need to restrict comparisons to the
-spatial region covered by *all* sections; this helper computes that mask.
+Computes the maximal common spatial region across multi-section slices.
+When sections of a 3D volume have different lateral footprints, downstream
+metrics need to restrict comparisons to the spatial region covered by
+*all* sections; this helper computes that mask.
 
 The implementation is pure NumPy: compute each section's axis-aligned
 bounding box (AABB), intersect them, then mark per-section points that
