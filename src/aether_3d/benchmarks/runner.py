@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from dataclasses import asdict
 from pathlib import Path
-from typing import Sequence
+from typing import Any, Sequence
 
 import anndata as ad
 
@@ -41,8 +41,8 @@ def run_holdout(
 
 def aggregate_volume_results(
     results_by_holdout: dict[tuple[str, str], list[VolumeAdapterResult]],
-) -> dict:
-    out: dict = {"schema_version": "1", "holdouts": {}}
+) -> dict[str, Any]:
+    out: dict[str, Any] = {"schema_version": "1", "holdouts": {}}
     for (dataset, holdout_id), results in results_by_holdout.items():
         key = f"{dataset}/{holdout_id}"
         out["holdouts"][key] = {}
@@ -56,7 +56,7 @@ def aggregate_volume_results(
     return out
 
 
-def write_volume_results_json(aggregated: dict, output_path: str | Path) -> Path:
+def write_volume_results_json(aggregated: dict[str, Any], output_path: str | Path) -> Path:
     p = Path(output_path)
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(json.dumps(aggregated, indent=2))

@@ -8,7 +8,7 @@ and the weighted multi-task loss (lambda_g, lambda_c).
 from __future__ import annotations
 
 from copy import deepcopy
-from typing import Dict
+from typing import Any, Dict, Tuple
 
 import pytorch_lightning as pl
 import torch
@@ -33,10 +33,12 @@ class AetherFlowModule(pl.LightningModule):
             prediction=config.prediction,
         )
 
-    def configure_optimizers(self):
+    def configure_optimizers(self) -> torch.optim.Optimizer:
         return torch.optim.AdamW(self.model.parameters(), lr=self.cfg.lr, weight_decay=self.cfg.weight_decay)
 
-    def _compute_multi_modal_loss(self, pred: Dict[str, torch.Tensor], target: Dict[str, torch.Tensor]):
+    def _compute_multi_modal_loss(
+        self, pred: Dict[str, torch.Tensor], target: Dict[str, torch.Tensor]
+    ) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
         loss_x = torch.nn.functional.mse_loss(pred["vx"], target["vx"])
         loss_g = torch.nn.functional.mse_loss(pred["vg"], target["vg"])
         loss_c = torch.nn.functional.mse_loss(pred["vc"], target.get("vc", torch.zeros_like(pred["vc"])))
@@ -44,7 +46,7 @@ class AetherFlowModule(pl.LightningModule):
         total = loss_x + self.cfg.lambda_g * loss_g + self.cfg.lambda_c * loss_c
         return total, {"loss_x": loss_x, "loss_g": loss_g, "loss_c": loss_c}
 
-    def training_step(self, batch, batch_idx):
+    def training_step(self, batch: Dict[str, torch.Tensor], batch_idx: int) -> torch.Tensor:
         # batch from SerialSliceTrajectoryDataset
         x0, g0, c0 = batch["x0"], batch["g0"], batch["c0"]
         x1, g1, c1 = batch["x1"], batch["g1"], batch["c1"]
@@ -89,9 +91,9 @@ class AetherFlowModule(pl.LightningModule):
         return loss
 
     @torch.no_grad()
-    def _update_ema(self):
+    def _update_ema(self) -> None:
         for ema_p, p in zip(self.ema_model.parameters(), self.model.parameters()):
             ema_p.data.mul_(self.cfg.ema_decay).add_(p.data, alpha=1 - self.cfg.ema_decay)
 
-    def on_train_batch_end(self, *args, **kwargs):
+    def on_train_batch_end(self, *args: Any, **kwargs: Any) -> None:
         self._update_ema()
