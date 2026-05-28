@@ -93,15 +93,39 @@ def betti_zero(
     return len(roots)
 
 
+def _mean_knn_distance(coords: npt.NDArray[np.floating[Any]], k: int = 6) -> float:
+    """Mean k-NN edge length over a point cloud.
+
+    Scale-aware companion to the integer component count: a collapsed cloud
+    (every cell at the same location) has a mean k-NN distance of 0, which
+    distinguishes it from a faithful cloud with the same component count.
+    """
+    n = coords.shape[0]
+    if n < 2:
+        return 0.0
+    k_use = min(k, n - 1)
+    diff = coords[:, None, :] - coords[None, :, :]
+    sq = (diff * diff).sum(axis=-1)
+    np.fill_diagonal(sq, np.inf)
+    knn_sq = np.partition(sq, k_use, axis=1)[:, :k_use]
+    return float(np.sqrt(knn_sq).mean())
+
+
 def betti_zero_stability(
     coords_truth: npt.NDArray[np.floating[Any]],
     coords_recon: npt.NDArray[np.floating[Any]],
     k: int = 6,
 ) -> float:
-    """Symmetric stability of Betti-0 across truth and reconstruction.
+    """Scale-aware Betti-0 stability across truth and reconstruction.
 
-    Returns 1.0 when both components counts match, dropping toward 0 as they
-    diverge. Defined as min(b_t, b_r) / max(b_t, b_r) with NaN on empty.
+    Combines the integer-component ratio with a mean-k-NN-distance ratio so a
+    *collapsed* reconstruction (every cell at the same point — same `b_r=1`
+    as the truth but topologically degenerate) does not score 1.0.
+
+    Issue #133: the previous min/max-on-integer-counts definition gave 1.0
+    for any reasonably dense slice (k-NN graph collapses to one component)
+    regardless of reconstruction quality, including a fully collapsed
+    reconstruction.
     """
     if coords_truth.size == 0 or coords_recon.size == 0:
         return float("nan")
@@ -109,7 +133,19 @@ def betti_zero_stability(
     b_r = betti_zero(coords_recon, k=k)
     if max(b_t, b_r) == 0:
         return float("nan")
-    return float(min(b_t, b_r) / max(b_t, b_r))
+    component_ratio = min(b_t, b_r) / max(b_t, b_r)
+
+    # Penalise mean-k-NN-distance mismatch (catches collapse).
+    scale_t = _mean_knn_distance(coords_truth, k=k)
+    scale_r = _mean_knn_distance(coords_recon, k=k)
+    if scale_t == 0.0 and scale_r == 0.0:
+        scale_ratio = 1.0
+    elif scale_t == 0.0 or scale_r == 0.0:
+        scale_ratio = 0.0
+    else:
+        scale_ratio = min(scale_t, scale_r) / max(scale_t, scale_r)
+
+    return float(component_ratio * scale_ratio)
 
 
 # -- Voxelized flow divergence --------------------------------------------
