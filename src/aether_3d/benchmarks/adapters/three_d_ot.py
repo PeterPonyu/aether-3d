@@ -16,7 +16,6 @@ from __future__ import annotations
 from typing import Any
 
 import anndata as ad
-import numpy as np
 import scanpy as sc
 
 from ..contract import VolumeAdapterInput, VolumeBaseAdapter

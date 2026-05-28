@@ -71,8 +71,6 @@ from scripts.baselines.naive_25d_baseline import stack_naive_25d
 
 from aether_3d.config.aether_config import Aether3DConfig
 from aether_3d.core.aether_reconstructor import AetherReconstructor
-from aether_3d.data.trajectory_dataset import SerialSliceTrajectoryDataset
-from aether_3d.models.aether_velocity_field import MultiModalVelocityField
 from aether_3d.modules.aether_flow_module import AetherFlowModule
 
 
