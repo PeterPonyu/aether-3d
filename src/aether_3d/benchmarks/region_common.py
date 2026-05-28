@@ -17,6 +17,7 @@ from collections.abc import Sequence
 from typing import Any
 
 import numpy as np
+import numpy.typing as npt
 
 
 __all__ = [
@@ -25,7 +26,7 @@ __all__ = [
 
 
 def maximal_common_region(
-    coords_per_section: Sequence[np.ndarray],
+    coords_per_section: Sequence[npt.NDArray[Any]],
     shrink: float = 0.0,
 ) -> dict[str, Any]:
     """Identify the maximal axis-aligned region common to every section.
@@ -75,7 +76,7 @@ def maximal_common_region(
             "not overlap or shrink is too large"
         )
 
-    masks: list[np.ndarray] = []
+    masks: list[npt.NDArray[np.bool_]] = []
     n_kept: list[int] = []
     for s in sections:
         m = (

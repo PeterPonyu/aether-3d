@@ -20,6 +20,7 @@ from typing import Any, Optional
 
 import anndata as ad
 import numpy as np
+import numpy.typing as npt
 
 
 @dataclass
@@ -326,7 +327,7 @@ def _compute_quartet(
     )
 
 
-def _chamfer_distance(a: np.ndarray, b: np.ndarray) -> float:
+def _chamfer_distance(a: npt.NDArray[np.floating[Any]], b: npt.NDArray[np.floating[Any]]) -> float:
     """Symmetric chamfer distance between two 2D point clouds."""
     if a.size == 0 or b.size == 0:
         return float("nan")
@@ -336,7 +337,7 @@ def _chamfer_distance(a: np.ndarray, b: np.ndarray) -> float:
     return float(0.5 * (np.sqrt(d_ab).mean() + np.sqrt(d_ba).mean()))
 
 
-def _coord_rmse(a: np.ndarray, b: np.ndarray) -> float:
+def _coord_rmse(a: npt.NDArray[np.floating[Any]], b: npt.NDArray[np.floating[Any]]) -> float:
     """RMSE of nearest-neighbor distances from a→b (one-sided)."""
     if a.size == 0 or b.size == 0:
         return float("nan")
@@ -344,7 +345,9 @@ def _coord_rmse(a: np.ndarray, b: np.ndarray) -> float:
     return float(np.sqrt(np.mean(d ** 2)))
 
 
-def _nearest_sq(a: np.ndarray, b: np.ndarray) -> np.ndarray:
+def _nearest_sq(
+    a: npt.NDArray[np.floating[Any]], b: npt.NDArray[np.floating[Any]]
+) -> npt.NDArray[np.float64]:
     """Nearest-neighbor squared Euclidean distances without N×M×D materialization."""
     try:
         from scipy.spatial import cKDTree
@@ -363,7 +366,9 @@ def _nearest_sq(a: np.ndarray, b: np.ndarray) -> np.ndarray:
         return out
 
 
-def _pairwise_sq(a: np.ndarray, b: np.ndarray) -> np.ndarray:
+def _pairwise_sq(
+    a: npt.NDArray[np.floating[Any]], b: npt.NDArray[np.floating[Any]]
+) -> npt.NDArray[np.float64]:
     """Pairwise squared Euclidean distance; kept for small-test compatibility."""
     diff = a[:, None, :] - b[None, :, :]
     return np.asarray((diff * diff).sum(axis=-1))

@@ -16,6 +16,7 @@ from dataclasses import asdict, dataclass
 from typing import Any, Sequence
 
 import numpy as np
+import numpy.typing as npt
 
 from ..coupling.uot import compute_hybrid_cost, compute_uot_coupling
 
@@ -49,7 +50,11 @@ def make_paired_slices(
     spatial_noise: float = 1.0,
     gene_noise: float = 0.1,
     seed: int = 0,
-) -> tuple[dict[str, np.ndarray], dict[str, np.ndarray], np.ndarray]:
+) -> tuple[
+    dict[str, npt.NDArray[np.float32]],
+    dict[str, npt.NDArray[np.float32]],
+    npt.NDArray[np.int64],
+]:
     """Build two synthetic slices where slice 1 is a noisy copy of slice 0.
 
     Returns (slice0, slice1, true_permutation) where true_permutation[i] is the
@@ -83,8 +88,8 @@ def make_paired_slices(
 
 
 def score_coupling(
-    P: np.ndarray,
-    true_permutation: np.ndarray,
+    P: npt.NDArray[Any],
+    true_permutation: npt.NDArray[np.int64],
 ) -> dict[str, float]:
     """Score a soft coupling matrix P against the known ground-truth pairing.
 

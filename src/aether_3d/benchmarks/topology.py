@@ -29,15 +29,18 @@ upstream library can be wired later for proper computation.
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Any, Optional
 
 import numpy as np
+import numpy.typing as npt
 
 
 # -- Betti-0 via k-NN graph union-find ------------------------------------
 
 
-def betti_zero(coords: np.ndarray, k: int = 6, edge_threshold: Optional[float] = None) -> int:
+def betti_zero(
+    coords: npt.NDArray[np.floating[Any]], k: int = 6, edge_threshold: Optional[float] = None
+) -> int:
     """Count connected components in a k-NN graph over a 2D/3D point cloud.
 
     A reconstructed tissue slice should match the ground-truth Betti-0
@@ -91,8 +94,8 @@ def betti_zero(coords: np.ndarray, k: int = 6, edge_threshold: Optional[float] =
 
 
 def betti_zero_stability(
-    coords_truth: np.ndarray,
-    coords_recon: np.ndarray,
+    coords_truth: npt.NDArray[np.floating[Any]],
+    coords_recon: npt.NDArray[np.floating[Any]],
     k: int = 6,
 ) -> float:
     """Symmetric stability of Betti-0 across truth and reconstruction.
@@ -113,10 +116,10 @@ def betti_zero_stability(
 
 
 def flow_divergence_map(
-    coords: np.ndarray,
-    velocities: np.ndarray,
+    coords: npt.NDArray[np.floating[Any]],
+    velocities: npt.NDArray[np.floating[Any]],
     grid_size: int = 16,
-) -> np.ndarray:
+) -> npt.NDArray[np.float32]:
     """Per-voxel divergence ∇·v computed via central differences on a grid.
 
     For a velocity field that preserves mass, ∇·v ≈ 0 everywhere. Local
@@ -146,8 +149,8 @@ def flow_divergence_map(
     ix = np.clip(((coords[:, 0] - xmin) / xr * (grid_size - 1)).astype(int), 0, grid_size - 1)
     iy = np.clip(((coords[:, 1] - ymin) / yr * (grid_size - 1)).astype(int), 0, grid_size - 1)
 
-    grid_vx = np.zeros((grid_size, grid_size), dtype=np.float64)
-    grid_vy = np.zeros((grid_size, grid_size), dtype=np.float64)
+    grid_vx: npt.NDArray[np.float64] = np.zeros((grid_size, grid_size), dtype=np.float64)
+    grid_vy: npt.NDArray[np.float64] = np.zeros((grid_size, grid_size), dtype=np.float64)
     counts = np.zeros((grid_size, grid_size), dtype=np.float64)
     for ci in range(coords.shape[0]):
         grid_vx[iy[ci], ix[ci]] += velocities[ci, 0]
@@ -170,7 +173,7 @@ def flow_divergence_map(
     return (dvx_dx + dvy_dy).astype(np.float32)
 
 
-def divergence_summary(div_map: np.ndarray) -> dict[str, float]:
+def divergence_summary(div_map: npt.NDArray[np.floating[Any]]) -> dict[str, float]:
     """Reduce a divergence map to scalars: mean |∇·v|, max |∇·v|, RMS ∇·v."""
     finite = div_map[np.isfinite(div_map)]
     if finite.size == 0:
@@ -189,7 +192,7 @@ def divergence_summary(div_map: np.ndarray) -> dict[str, float]:
 # -- Velocity anisotropy --------------------------------------------------
 
 
-def velocity_anisotropy(velocities: np.ndarray) -> float:
+def velocity_anisotropy(velocities: npt.NDArray[np.floating[Any]]) -> float:
     """Eigenvalue ratio of the velocity covariance.
 
     Returns λ_max / λ_min, where eigenvalues are of the 2×2 covariance matrix
@@ -214,9 +217,9 @@ def velocity_anisotropy(velocities: np.ndarray) -> float:
 
 
 def topology_metrics(
-    coords_truth: np.ndarray,
-    coords_recon: np.ndarray,
-    velocities_recon: Optional[np.ndarray] = None,
+    coords_truth: npt.NDArray[np.floating[Any]],
+    coords_recon: npt.NDArray[np.floating[Any]],
+    velocities_recon: Optional[npt.NDArray[np.floating[Any]]] = None,
     grid_size: int = 16,
     k: int = 6,
 ) -> dict[str, float]:

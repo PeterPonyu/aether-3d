@@ -8,9 +8,10 @@ unbalanced Sinkhorn solver in PyTorch, with backward compatible NumPy CPU fallba
 from __future__ import annotations
 
 import warnings
-from typing import Tuple, cast
+from typing import Any, Tuple, cast
 
 import numpy as np
+import numpy.typing as npt
 import torch
 
 try:
@@ -22,15 +23,15 @@ except ImportError:
 
 
 def compute_hybrid_cost(
-    x0: np.ndarray | torch.Tensor,
-    g0: np.ndarray | torch.Tensor,
-    c0: np.ndarray | torch.Tensor,
-    x1: np.ndarray | torch.Tensor,
-    g1: np.ndarray | torch.Tensor,
-    c1: np.ndarray | torch.Tensor,
+    x0: npt.NDArray[Any] | torch.Tensor,
+    g0: npt.NDArray[Any] | torch.Tensor,
+    c0: npt.NDArray[Any] | torch.Tensor,
+    x1: npt.NDArray[Any] | torch.Tensor,
+    g1: npt.NDArray[Any] | torch.Tensor,
+    c1: npt.NDArray[Any] | torch.Tensor,
     alpha_spatial: float = 0.5,
     lambda_class: float = 10.0,
-) -> np.ndarray | torch.Tensor:
+) -> npt.NDArray[Any] | torch.Tensor:
     """
     Hybrid cost matrix for UOT between two slices.
 
@@ -120,13 +121,17 @@ def compute_hybrid_cost_pytorch(
 
 
 def compute_uot_coupling(
-    cost: np.ndarray | torch.Tensor,
+    cost: npt.NDArray[Any] | torch.Tensor,
     reg: float = 0.8,
     tau: float = 0.05,
     n_samples: int = 50000,
     rng: np.random.Generator | None = None,
     torch_generator: torch.Generator | None = None,
-) -> Tuple[np.ndarray | torch.Tensor, np.ndarray | torch.Tensor, np.ndarray | torch.Tensor]:
+) -> Tuple[
+    npt.NDArray[Any] | torch.Tensor,
+    npt.NDArray[Any] | torch.Tensor,
+    npt.NDArray[Any] | torch.Tensor,
+]:
     """
     Unbalanced OT coupling using unbalanced Sinkhorn.
     Automatically routes to GPU solver if cost is a PyTorch tensor, otherwise uses POT on CPU.
