@@ -49,6 +49,24 @@ class VolumeAdapterInput:
     seed: int = 0
     extra: dict[str, Any] = field(default_factory=dict)
 
+    def __post_init__(self) -> None:
+        # Validate holdout indices up front so misconfigured splits fail
+        # closed at construction time rather than later in scoring
+        # (see issue #30).
+        n = len(self.slices)
+        seen: set[int] = set()
+        for i in self.held_out_indices:
+            if not (0 <= i < n):
+                raise ValueError(
+                    f"held_out_indices contains out-of-range index {i} "
+                    f"(must be 0..{n - 1} given {n} slices)"
+                )
+            if i in seen:
+                raise ValueError(
+                    f"held_out_indices contains duplicate index {i}"
+                )
+            seen.add(i)
+
     def visible_slices(self) -> list[ad.AnnData]:
         """The slices the adapter is allowed to see (held-out ones removed)."""
         return [s for i, s in enumerate(self.slices) if i not in set(self.held_out_indices)]

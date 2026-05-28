@@ -14,6 +14,8 @@ from pathlib import Path
 import anndata as ad
 import numpy as np
 
+import pytest
+
 from aether_3d.benchmarks import (
     VolumeAdapterInput,
     VolumeBaseAdapter,
@@ -284,3 +286,38 @@ def test_chamfer_uses_nearest_neighbor_without_pairwise_materialization(monkeypa
 
     assert contract._chamfer_distance(a, b) == 1.0
     assert contract._coord_rmse(a, b) == 1.0
+
+
+def test_volume_adapter_input_rejects_out_of_range_held_out_index():
+    """Regression for issue #30: VolumeAdapterInput must validate held-out
+    indices at construction time so misconfigured holdouts fail closed
+    instead of silently passing visible_slices() and crashing in scoring.
+    """
+    s = ad.AnnData(X=np.ones((1, 1), dtype=np.float32))
+    s.obs["z"] = [0.0]
+
+    with pytest.raises(ValueError, match="out-of-range"):
+        VolumeAdapterInput(slices=[s], held_out_indices=[99])
+
+    with pytest.raises(ValueError, match="out-of-range"):
+        VolumeAdapterInput(slices=[s], held_out_indices=[-1])
+
+
+def test_volume_adapter_input_rejects_duplicate_held_out_index():
+    s = ad.AnnData(X=np.ones((1, 1), dtype=np.float32))
+    s.obs["z"] = [0.0]
+    s.obsm["spatial"] = np.zeros((1, 2), dtype=np.float32)
+    stack = [s, s.copy()]
+
+    with pytest.raises(ValueError, match="duplicate"):
+        VolumeAdapterInput(slices=stack, held_out_indices=[0, 0])
+
+
+def test_volume_adapter_input_accepts_valid_held_out_indices():
+    s = ad.AnnData(X=np.ones((1, 1), dtype=np.float32))
+    s.obs["z"] = [0.0]
+    s.obsm["spatial"] = np.zeros((1, 2), dtype=np.float32)
+
+    # Should not raise
+    inp = VolumeAdapterInput(slices=[s], held_out_indices=[0])
+    assert inp.held_out_indices == [0]
