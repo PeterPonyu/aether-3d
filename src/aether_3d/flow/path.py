@@ -37,6 +37,11 @@ from .utils import expand_time_like_data
 
 PathName = Literal["linear", "gvp", "vp"]
 
+# Per-sample alpha gate threshold for ``InterpolationPath.drift``. Shared with
+# the lumina-st PR for #123 (cross-repo drift cluster); both repos must use the
+# same value so the fix shape is identical across forks.
+EPS_ALPHA = 1e-6
+
 
 class InterpolationPath(ABC):
     """Abstract base class for a probability path p_t(x) = N(mu_t, sigma_t^2)."""
@@ -84,9 +89,16 @@ class InterpolationPath(ABC):
         t = expand_time_like_data(t, x)
         a, da = self.alpha(t)
         s, ds = self.sigma(t)
-        # Standard derivation from the Fokker-Planck of the linear interpolation
-        drift = da / a * x if a.abs().min() > 1e-8 else torch.zeros_like(x)
-        diffusion = da / a * s**2 - s * ds
+        # Standard derivation from the Fokker-Planck of the linear interpolation.
+        # Per-sample mask (NOT batch-wide reduction) so a single boundary-near
+        # sample cannot zero out the entire batch's drift (issue #136). The
+        # safe denominator avoids div-by-near-zero blow-up on masked rows.
+        # Same shape, EPS, and test name as lumina-st #123 — see the cross-repo
+        # drift template in internal planning notes.
+        mask = a.abs() > EPS_ALPHA
+        safe_a = torch.where(mask, a, torch.ones_like(a))
+        drift = torch.where(mask, da / safe_a * x, torch.zeros_like(x))
+        diffusion = da / safe_a * s**2 - s * ds
         return -drift, diffusion
 
     def diffusion(self, x: torch.Tensor, t: torch.Tensor, form: str = "constant", norm: float = 1.0) -> torch.Tensor | float:
