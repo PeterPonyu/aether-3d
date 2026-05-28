@@ -71,7 +71,7 @@ def morans_i_per_gene(
     coords: np.ndarray,
     k: int = 6,
 ) -> np.ndarray:
-    """Per-gene Moran's I using a k-NN binary spatial weight matrix.
+    """Per-gene Moran's I using a sparse k-NN binary spatial weight matrix.
 
     Returns an array of shape (n_genes,). NaN for genes with zero variance.
     """
@@ -79,29 +79,40 @@ def morans_i_per_gene(
     if n_cells < k + 1:
         return np.full(n_genes, np.nan, dtype=np.float32)
 
-    # Pairwise squared distances → k-NN binary weights (row-normalized).
-    diff = coords[:, None, :] - coords[None, :, :]
-    sq = (diff * diff).sum(axis=-1)
-    np.fill_diagonal(sq, np.inf)
-    knn_idx = np.argpartition(sq, k, axis=1)[:, :k]
-    W = np.zeros((n_cells, n_cells), dtype=np.float32)
-    rows = np.repeat(np.arange(n_cells), k)
-    W[rows, knn_idx.ravel()] = 1.0
-    row_sum = W.sum(axis=1, keepdims=True)
-    row_sum = np.where(row_sum < 1e-9, 1.0, row_sum)
-    W = W / row_sum
-    W_total = W.sum()
+    try:
+        from scipy.sparse import csr_matrix  # type: ignore
+        from scipy.spatial import cKDTree  # type: ignore
+
+        _, idx = cKDTree(coords).query(coords, k=k + 1)
+        knn_idx = np.asarray(idx[:, 1:], dtype=np.int64)
+        rows = np.repeat(np.arange(n_cells), k)
+        data = np.full(n_cells * k, 1.0 / k, dtype=np.float64)
+        W = csr_matrix((data, (rows, knn_idx.ravel())), shape=(n_cells, n_cells))
+        W_total = float(W.sum())
+        X64 = X.astype(np.float64, copy=False)
+        centered = X64 - X64.mean(axis=0, keepdims=True)
+        denom = np.sum(centered * centered, axis=0)
+        wx = W @ centered
+        numer = np.sum(centered * wx, axis=0)
+    except ImportError:
+        # Dependency-light fallback: still vectorize all genes at once.
+        diff = coords[:, None, :] - coords[None, :, :]
+        sq = (diff * diff).sum(axis=-1)
+        np.fill_diagonal(sq, np.inf)
+        knn_idx = np.argpartition(sq, k, axis=1)[:, :k]
+        W = np.zeros((n_cells, n_cells), dtype=np.float64)
+        rows = np.repeat(np.arange(n_cells), k)
+        W[rows, knn_idx.ravel()] = 1.0 / k
+        W_total = float(W.sum())
+        X64 = X.astype(np.float64, copy=False)
+        centered = X64 - X64.mean(axis=0, keepdims=True)
+        denom = np.sum(centered * centered, axis=0)
+        wx = W @ centered
+        numer = np.sum(centered * wx, axis=0)
 
     result = np.full(n_genes, np.nan, dtype=np.float32)
-    for g in range(n_genes):
-        x = X[:, g].astype(np.float64)
-        x_mean = x.mean()
-        dx = x - x_mean
-        denom = (dx ** 2).sum()
-        if denom < 1e-12:
-            continue
-        numer = float(dx @ W @ dx)
-        result[g] = float(n_cells / W_total) * (numer / denom)
+    valid = denom >= 1e-12
+    result[valid] = (float(n_cells) / W_total) * (numer[valid] / denom[valid])
     return result
 
 
@@ -146,15 +157,19 @@ def morans_i_agreement(
 def domain_ari_nmi(
     X_truth: np.ndarray,
     X_recon: np.ndarray,
+    coords_truth: np.ndarray | None = None,
+    coords_recon: np.ndarray | None = None,
     n_clusters: int = 5,
     seed: int = 0,
-) -> dict[str, float]:
+) -> dict[str, Any]:
     """KMeans-based ARI + NMI between truth- and recon-derived cluster labels.
 
     Mirrors the standard CellCharter/Leiden-style domain comparison used in
     the spatial-omics literature (we use KMeans for dependency simplicity —
     the cluster structure of the latent space is what matters, not the
-    algorithm).
+    algorithm). When coordinates are supplied, reconstructed cells are first
+    nearest-neighbor matched to truth cells so ARI/NMI compare labels over the
+    same spatial samples rather than arbitrary row order.
     """
     if X_truth.size == 0 or X_recon.size == 0:
         return {"ari": float("nan"), "nmi": float("nan")}
@@ -168,17 +183,35 @@ def domain_ari_nmi(
     except ImportError:
         return {"ari": float("nan"), "nmi": float("nan"), "status": "sklearn-missing"}
 
-    # Pair cells across truth and recon by nearest spatial-index match.
-    n_pair = min(X_truth.shape[0], X_recon.shape[0])
+    if coords_truth is not None and coords_recon is not None:
+        try:
+            from scipy.spatial import cKDTree  # type: ignore
+
+            _, recon_idx = cKDTree(coords_recon).query(coords_truth, k=1)
+            X_truth_cmp = X_truth
+            X_recon_cmp = X_recon[np.asarray(recon_idx, dtype=np.int64)]
+        except ImportError:
+            n_pair = min(X_truth.shape[0], X_recon.shape[0])
+            X_truth_cmp = X_truth[:n_pair]
+            X_recon_cmp = X_recon[:n_pair]
+    else:
+        n_pair = min(X_truth.shape[0], X_recon.shape[0])
+        X_truth_cmp = X_truth[:n_pair]
+        X_recon_cmp = X_recon[:n_pair]
+
+    n_pair = min(X_truth_cmp.shape[0], X_recon_cmp.shape[0])
     if n_pair < n_clusters * 2:
         return {"ari": float("nan"), "nmi": float("nan"), "status": "too-few-cells"}
 
     k = min(n_clusters, n_pair)
-    km_t = KMeans(n_clusters=k, random_state=seed, n_init=10).fit(X_truth[:n_pair])
-    km_r = KMeans(n_clusters=k, random_state=seed, n_init=10).fit(X_recon[:n_pair])
+    pooled = np.vstack([X_truth_cmp[:n_pair], X_recon_cmp[:n_pair]])
+    km = KMeans(n_clusters=k, random_state=seed, n_init=10).fit(pooled)
+    labels = km.labels_
+    truth_labels = labels[:n_pair]
+    recon_labels = labels[n_pair:]
     return {
-        "ari": float(adjusted_rand_score(km_t.labels_, km_r.labels_)),
-        "nmi": float(adjusted_mutual_info_score(km_t.labels_, km_r.labels_)),
+        "ari": float(adjusted_rand_score(truth_labels, recon_labels)),
+        "nmi": float(adjusted_mutual_info_score(truth_labels, recon_labels)),
     }
 
 
@@ -190,9 +223,7 @@ def celltype_proportion_spearman(
     if len(truth_labels) == 0 or len(recon_labels) == 0:
         return float("nan")
 
-    all_labels = sorted(set(truth_labels) | set(recon_labels))
-    t_counts = np.array([sum(1 for x in truth_labels if x == lab) for lab in all_labels], dtype=np.float64)
-    r_counts = np.array([sum(1 for x in recon_labels if x == lab) for lab in all_labels], dtype=np.float64)
+    t_counts, r_counts = _aligned_label_counts(truth_labels, recon_labels)
 
     if t_counts.std() < 1e-9 or r_counts.std() < 1e-9:
         return float("nan")
@@ -222,15 +253,7 @@ def celltype_distribution_cosine(
     """
     if len(truth_labels) == 0 or len(recon_labels) == 0:
         return float("nan")
-    all_labels = sorted(set(truth_labels) | set(recon_labels))
-    t = np.array(
-        [sum(1 for x in truth_labels if x == lab) for lab in all_labels],
-        dtype=np.float64,
-    )
-    r = np.array(
-        [sum(1 for x in recon_labels if x == lab) for lab in all_labels],
-        dtype=np.float64,
-    )
+    t, r = _aligned_label_counts(truth_labels, recon_labels)
     nt, nr = float(np.linalg.norm(t)), float(np.linalg.norm(r))
     if nt < 1e-12 or nr < 1e-12:
         return float("nan")
@@ -401,7 +424,14 @@ def geometry_quartet(
         X_recon=v_X, coords_recon=v_coords,
         top_k_hvg=top_k_hvg,
     )
-    ari_nmi = domain_ari_nmi(X_truth=t_X, X_recon=v_X, n_clusters=n_clusters, seed=seed)
+    ari_nmi = domain_ari_nmi(
+        X_truth=t_X,
+        X_recon=v_X,
+        coords_truth=t_coords,
+        coords_recon=v_coords,
+        n_clusters=n_clusters,
+        seed=seed,
+    )
     metrics["domain_ari"] = ari_nmi.get("ari", float("nan"))
     metrics["domain_nmi"] = ari_nmi.get("nmi", float("nan"))
     if "status" in ari_nmi:
@@ -428,3 +458,17 @@ def _spearman_fallback(a: np.ndarray, b: np.ndarray) -> float:
     if ar.std() < 1e-9 or br.std() < 1e-9:
         return float("nan")
     return float(np.corrcoef(ar, br)[0, 1])
+
+
+def _aligned_label_counts(
+    truth_labels: Sequence[Any],
+    recon_labels: Sequence[Any],
+) -> tuple[np.ndarray, np.ndarray]:
+    truth_values, truth_counts = np.unique(np.asarray(truth_labels, dtype=str), return_counts=True)
+    recon_values, recon_counts = np.unique(np.asarray(recon_labels, dtype=str), return_counts=True)
+    all_labels = np.union1d(truth_values, recon_values)
+    truth_map = dict(zip(truth_values.tolist(), truth_counts.tolist()))
+    recon_map = dict(zip(recon_values.tolist(), recon_counts.tolist()))
+    t = np.array([truth_map.get(label, 0) for label in all_labels], dtype=np.float64)
+    r = np.array([recon_map.get(label, 0) for label in all_labels], dtype=np.float64)
+    return t, r

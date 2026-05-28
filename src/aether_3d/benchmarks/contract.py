@@ -193,9 +193,12 @@ class VolumeBaseAdapter(ABC):
 def compute_volume_metrics(volume: ad.AnnData, inp: VolumeAdapterInput) -> dict[str, Any]:
     """Geometry + molecular metrics for a reconstructed volume vs held-out truth.
 
-    Standard virtual-slice benchmark contract: per-virtual-slice coordinate
-    RMSE, Chamfer distance, cell-count Spearman, per-gene Pearson against the
-    truth slice nearest to each virtual depth.
+    Standard virtual-slice benchmark contract: per-holdout-slice cell-count
+    ratio, coordinate RMSE, Chamfer distance, sliced Wasserstein, Moran's-I
+    agreement, spatially matched domain ARI/NMI, cell-type proportion
+    Spearman, and Betti-0 topology stability against the truth slice nearest
+    to each virtual depth. Aggregate ``mean_*`` keys summarize numeric
+    per-slice metrics.
     """
     metrics: dict[str, Any] = {
         "n_virtual_cells": int(volume.n_obs),
