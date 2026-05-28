@@ -8,7 +8,7 @@ with a clean, validated, serializable config.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, ConfigDict
 
@@ -64,7 +64,7 @@ class Aether3DConfig(BaseModel):
     # Output
     output_dir: Path = Field(default=Path("results"))
 
-    def model_dump_for_checkpoint(self):
+    def model_dump_for_checkpoint(self) -> dict[str, Any]:
         d = self.model_dump()
         for k, v in d.items():
             if isinstance(v, Path):

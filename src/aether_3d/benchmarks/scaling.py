@@ -83,7 +83,7 @@ def _capture_git_sha() -> Optional[str]:
 def _capture_versions() -> tuple[Optional[str], Optional[str], str]:
     """Returns (torch_version, cuda_version, device)."""
     try:
-        import torch  # type: ignore
+        import torch
 
         tv = torch.__version__
         if torch.cuda.is_available():
@@ -97,7 +97,7 @@ def _peak_memory_mb(device: str) -> float:
     """Peak memory in MB. Uses CUDA tracker on GPU, RSS on CPU."""
     if device == "cuda":
         try:
-            import torch  # type: ignore
+            import torch
 
             return float(torch.cuda.max_memory_allocated()) / (1024 ** 2)
         except (ImportError, RuntimeError):
@@ -110,7 +110,7 @@ def _peak_memory_mb(device: str) -> float:
 def _reset_memory_tracker(device: str) -> None:
     if device == "cuda":
         try:
-            import torch  # type: ignore
+            import torch
 
             torch.cuda.reset_peak_memory_stats()
             torch.cuda.empty_cache()
