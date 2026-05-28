@@ -90,11 +90,12 @@ class AetherReconstructor:
         self.module = AetherFlowModule(self.cfg, model)
 
         if trainer is None:
-            trainer = pl.Trainer(
-                max_epochs=self.cfg.max_epochs,
-                default_root_dir=str(self.cfg.output_dir),
-                **kwargs,
-            )
+            # User-supplied kwargs (e.g. README's `fit(max_epochs=100)`) take
+            # precedence over cfg defaults; setdefault avoids the duplicate
+            # `max_epochs` TypeError reported in issues #115 and #80.
+            kwargs.setdefault("max_epochs", self.cfg.max_epochs)
+            kwargs.setdefault("default_root_dir", str(self.cfg.output_dir))
+            trainer = pl.Trainer(**kwargs)
 
         trainer.fit(self.module, train_dataloaders=loader)
         self.model = self.module.model
