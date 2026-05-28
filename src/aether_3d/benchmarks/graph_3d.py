@@ -15,6 +15,7 @@ from collections.abc import Iterable
 from typing import Any
 
 import numpy as np
+import numpy.typing as npt
 
 
 __all__ = [
@@ -25,7 +26,7 @@ __all__ = [
 ]
 
 
-def _normalize_edges(edges: Iterable[tuple[int, int]], n_nodes: int) -> np.ndarray:
+def _normalize_edges(edges: Iterable[tuple[int, int]], n_nodes: int) -> npt.NDArray[np.int64]:
     """Return an (E, 2) sorted-pair edge array, deduped and self-loop-free."""
     pairs = set()
     for u, v in edges:
@@ -76,7 +77,7 @@ def degree_histogram(
 
 
 def edge_length_distribution(
-    coords_3d: np.ndarray,
+    coords_3d: npt.NDArray[np.floating[Any]],
     edges: Iterable[tuple[int, int]],
     n_bins: int = 30,
 ) -> dict[str, Any]:

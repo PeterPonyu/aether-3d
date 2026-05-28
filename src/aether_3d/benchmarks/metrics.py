@@ -23,11 +23,12 @@ from typing import Any, Optional, Sequence
 
 import anndata as ad
 import numpy as np
+import numpy.typing as npt
 
 
 def sliced_wasserstein_2d(
-    a: np.ndarray,
-    b: np.ndarray,
+    a: npt.NDArray[np.floating[Any]],
+    b: npt.NDArray[np.floating[Any]],
     n_projections: int = 50,
     seed: int = 0,
 ) -> float:
@@ -46,10 +47,10 @@ def sliced_wasserstein_2d(
     try:
         from scipy.stats import wasserstein_distance
 
-        def _w1d(x: np.ndarray, y: np.ndarray) -> float:
+        def _w1d(x: npt.NDArray[np.floating[Any]], y: npt.NDArray[np.floating[Any]]) -> float:
             return float(wasserstein_distance(x, y))
     except ImportError:
-        def _w1d(x: np.ndarray, y: np.ndarray) -> float:
+        def _w1d(x: npt.NDArray[np.floating[Any]], y: npt.NDArray[np.floating[Any]]) -> float:
             xs = np.sort(x)
             ys = np.sort(y)
             n = max(len(xs), len(ys))
@@ -67,10 +68,10 @@ def sliced_wasserstein_2d(
 
 
 def morans_i_per_gene(
-    X: np.ndarray,
-    coords: np.ndarray,
+    X: npt.NDArray[np.float32],
+    coords: npt.NDArray[np.float32],
     k: int = 6,
-) -> np.ndarray:
+) -> npt.NDArray[np.float32]:
     """Per-gene Moran's I using a sparse k-NN binary spatial weight matrix.
 
     Returns an array of shape (n_genes,). NaN for genes with zero variance.
@@ -117,10 +118,10 @@ def morans_i_per_gene(
 
 
 def morans_i_agreement(
-    X_truth: np.ndarray,
-    coords_truth: np.ndarray,
-    X_recon: np.ndarray,
-    coords_recon: np.ndarray,
+    X_truth: npt.NDArray[np.float32],
+    coords_truth: npt.NDArray[np.float32],
+    X_recon: npt.NDArray[np.float32],
+    coords_recon: npt.NDArray[np.float32],
     top_k_hvg: int = 100,
     k: int = 6,
 ) -> float:
@@ -155,10 +156,10 @@ def morans_i_agreement(
 
 
 def domain_ari_nmi(
-    X_truth: np.ndarray,
-    X_recon: np.ndarray,
-    coords_truth: np.ndarray | None = None,
-    coords_recon: np.ndarray | None = None,
+    X_truth: npt.NDArray[np.float32],
+    X_recon: npt.NDArray[np.float32],
+    coords_truth: npt.NDArray[np.float32] | None = None,
+    coords_recon: npt.NDArray[np.float32] | None = None,
     n_clusters: int = 5,
     seed: int = 0,
 ) -> dict[str, Any]:
@@ -448,8 +449,10 @@ def geometry_quartet(
     return metrics
 
 
-def _spearman_fallback(a: np.ndarray, b: np.ndarray) -> float:
-    def _rank(x: np.ndarray) -> np.ndarray:
+def _spearman_fallback(
+    a: npt.NDArray[np.floating[Any]], b: npt.NDArray[np.floating[Any]]
+) -> float:
+    def _rank(x: npt.NDArray[np.floating[Any]]) -> npt.NDArray[np.float64]:
         order = np.argsort(x)
         ranks = np.empty_like(order, dtype=np.float64)
         ranks[order] = np.arange(len(x))
@@ -463,7 +466,7 @@ def _spearman_fallback(a: np.ndarray, b: np.ndarray) -> float:
 def _aligned_label_counts(
     truth_labels: Sequence[Any],
     recon_labels: Sequence[Any],
-) -> tuple[np.ndarray, np.ndarray]:
+) -> tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]:
     truth_values, truth_counts = np.unique(np.asarray(truth_labels, dtype=str), return_counts=True)
     recon_values, recon_counts = np.unique(np.asarray(recon_labels, dtype=str), return_counts=True)
     all_labels = np.union1d(truth_values, recon_values)

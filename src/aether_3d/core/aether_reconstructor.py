@@ -12,6 +12,7 @@ from typing import Any, Callable, List
 
 import anndata as ad
 import numpy as np
+import numpy.typing as npt
 import pytorch_lightning as pl
 import scanpy as sc
 import torch
@@ -302,7 +303,9 @@ class AetherReconstructor:
         )
         return volume
 
-    def _get_onehot(self, adata: ad.AnnData, indices: np.ndarray) -> np.ndarray:
+    def _get_onehot(
+        self, adata: ad.AnnData, indices: npt.NDArray[np.int64]
+    ) -> npt.NDArray[np.float32]:
         """Helper to get one-hot cell classes."""
         labels = adata.obs[self.cfg.label_key].iloc[indices].astype(str).values
         if self.dataset is not None and hasattr(self.dataset, "label_encoder"):

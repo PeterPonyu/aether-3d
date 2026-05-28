@@ -10,6 +10,7 @@ from __future__ import annotations
 from typing import Any, Dict, List, Tuple
 
 import numpy as np
+import numpy.typing as npt
 import pandas as pd
 import scanpy as sc
 import torch
@@ -82,7 +83,7 @@ class SerialSliceTrajectoryDataset(Dataset[Dict[str, torch.Tensor]]):
             for s, t in zip(src, tgt):
                 self.pairs.append((i, s, i + 1, t))
 
-    def _onehot(self, labels: pd.Series) -> np.ndarray:
+    def _onehot(self, labels: pd.Series) -> npt.NDArray[np.float64]:
         encoded = self.label_encoder.transform(labels.astype(str))
         n_classes = len(self.label_encoder.classes_)
         return np.asarray(np.eye(n_classes)[encoded])
