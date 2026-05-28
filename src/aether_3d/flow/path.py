@@ -31,7 +31,6 @@ from dataclasses import dataclass
 from typing import Literal, Tuple
 
 import torch
-import torch.nn.functional as F
 
 from .utils import expand_time_like_data
 

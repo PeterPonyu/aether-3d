@@ -50,8 +50,8 @@ def main() -> int:
 
     alphas, lambdas = GRIDS[args.grid]
     points = [
-        UOTAblationPoint(alpha_spatial=a, lambda_class=l, seed=args.seed)
-        for a in alphas for l in lambdas
+        UOTAblationPoint(alpha_spatial=a, lambda_class=lam, seed=args.seed)
+        for a in alphas for lam in lambdas
     ]
 
     print(f"[uot-ablation] {args.grid} grid: {len(alphas)} alphas × "
