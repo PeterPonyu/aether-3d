@@ -69,6 +69,25 @@ ignore = ["E702", "E402"]
 [tool.mypy]
 strict = true
 
+# Third-party scientific libraries that ship no type stubs / py.typed marker.
+# Listed explicitly (no blanket global ignore) so new untyped imports still surface.
+# See issue #62 for the incremental strict-mypy paydown plan.
+[[tool.mypy.overrides]]
+module = [
+  "anndata",
+  "scanpy",
+  "ot",
+  "torchdiffeq",
+  "pandas",
+  "pandas.*",
+  "scipy.*",
+  "sklearn.*",
+  "plotly",
+  "plotly.*",
+  "pyvista",
+]
+ignore_missing_imports = true
+
 [tool.pytest.ini_options]
 pythonpath = ["src", "."]
 testpaths = ["tests"]

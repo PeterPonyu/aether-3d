@@ -27,8 +27,8 @@ from __future__ import annotations
 
 import math
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
-from typing import Literal, Tuple
+from dataclasses import dataclass, field
+from typing import Any, Callable, Literal, Tuple
 
 import torch
 
@@ -89,12 +89,12 @@ class InterpolationPath(ABC):
         diffusion = da / a * s**2 - s * ds
         return -drift, diffusion
 
-    def diffusion(self, x: torch.Tensor, t: torch.Tensor, form: str = "constant", norm: float = 1.0) -> torch.Tensor:
+    def diffusion(self, x: torch.Tensor, t: torch.Tensor, form: str = "constant", norm: float = 1.0) -> torch.Tensor | float:
         """Flexible diffusion coefficient for SDE sampling (SBDM, linear, etc.)."""
         t = expand_time_like_data(t, x)
         _, diffusion = self.drift(x, t)
 
-        choices = {
+        choices: dict[str, torch.Tensor | float] = {
             "constant": norm,
             "SBDM": norm * diffusion,
             "sigma": norm * self.sigma(t)[0],
@@ -167,7 +167,10 @@ class VPPath(InterpolationPath):
     sigma_min: float = 0.1
     sigma_max: float = 20.0
 
-    def __post_init__(self):
+    _log_mean: Callable[[torch.Tensor], torch.Tensor] = field(init=False, repr=False)
+    _d_log_mean: Callable[[torch.Tensor], torch.Tensor] = field(init=False, repr=False)
+
+    def __post_init__(self) -> None:
         self._log_mean = lambda t: -0.25 * ((1 - t) ** 2) * (self.sigma_max - self.sigma_min) - 0.5 * (1 - t) * self.sigma_min
         self._d_log_mean = lambda t: 0.5 * (1 - t) * (self.sigma_max - self.sigma_min) + 0.5 * self.sigma_min
 
@@ -184,7 +187,7 @@ class VPPath(InterpolationPath):
         return s, ds
 
 
-def get_path(name: PathName, **kwargs) -> InterpolationPath:
+def get_path(name: str, **kwargs: Any) -> InterpolationPath:
     """Factory for the three supported paths."""
     name = name.lower()
     if name == "linear":

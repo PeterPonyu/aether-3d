@@ -11,6 +11,8 @@ References (for the overall flow-matching approach):
 
 from __future__ import annotations
 
+from typing import Any
+
 import torch
 
 
@@ -42,7 +44,7 @@ def mean_flat(tensor: torch.Tensor) -> torch.Tensor:
 
 
 @torch.no_grad()
-def log_state(state_dict: dict, prefix: str = "") -> None:
+def log_state(state_dict: dict[str, Any], prefix: str = "") -> None:
     """Tiny helper for debugging tensor statistics (used sparingly in training)."""
     for k, v in state_dict.items():
         if isinstance(v, torch.Tensor):
