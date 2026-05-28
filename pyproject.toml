@@ -31,7 +31,8 @@ classifiers = [
 
 dependencies = [
   "torch>=2.4",
-  "numpy>=1.26",
+  # >=2.2 guarantees the generic-ndarray (npt.NDArray) stubs CI's mypy relies on.
+  "numpy>=2.2",
   "pandas>=2.2",
   "anndata>=0.10",
   "scanpy>=1.10",
@@ -45,7 +46,8 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest", "ruff", "mypy", "wandb"]
+# CI runs mypy 2.x; pin the major so local strict checks match CI exactly.
+dev = ["pytest", "ruff", "mypy>=2,<3", "wandb"]
 viz = ["plotly", "pyvista", "ipywidgets", "napari[all]"]
 
 [project.scripts]
