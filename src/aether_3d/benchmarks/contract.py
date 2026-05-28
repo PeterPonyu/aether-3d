@@ -168,6 +168,11 @@ class VolumeBaseAdapter(ABC):
         t0 = time.perf_counter()
         try:
             volume = self._reconstruct(visible, inp)
+            # Metric computation and any post-reconstruct schema validation
+            # must stay inside the failure boundary: a malformed adapter
+            # output should produce status="error:..." instead of escaping
+            # the adapter contract (see issue #29).
+            metrics = compute_volume_metrics(volume=volume, inp=inp)
         except Exception as exc:
             return VolumeAdapterResult(
                 method=self.name,
@@ -178,8 +183,6 @@ class VolumeBaseAdapter(ABC):
                 runtime_s=time.perf_counter() - t0,
             )
         runtime = time.perf_counter() - t0
-
-        metrics = compute_volume_metrics(volume=volume, inp=inp)
 
         return VolumeAdapterResult(
             method=self.name,
