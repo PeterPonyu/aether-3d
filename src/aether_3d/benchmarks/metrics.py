@@ -44,7 +44,7 @@ def sliced_wasserstein_2d(
     rng = np.random.default_rng(seed)
     dists: list[float] = []
     try:
-        from scipy.stats import wasserstein_distance  # type: ignore
+        from scipy.stats import wasserstein_distance
 
         def _w1d(x: np.ndarray, y: np.ndarray) -> float:
             return float(wasserstein_distance(x, y))
@@ -80,8 +80,8 @@ def morans_i_per_gene(
         return np.full(n_genes, np.nan, dtype=np.float32)
 
     try:
-        from scipy.sparse import csr_matrix  # type: ignore
-        from scipy.spatial import cKDTree  # type: ignore
+        from scipy.sparse import csr_matrix
+        from scipy.spatial import cKDTree
 
         _, idx = cKDTree(coords).query(coords, k=k + 1)
         knn_idx = np.asarray(idx[:, 1:], dtype=np.int64)
@@ -146,7 +146,7 @@ def morans_i_agreement(
     if mask.sum() < 3:
         return float("nan")
     try:
-        from scipy.stats import spearmanr  # type: ignore
+        from scipy.stats import spearmanr
 
         rho, _ = spearmanr(I_truth[mask], I_recon[mask])
         return float(rho) if not np.isnan(rho) else float("nan")
@@ -175,8 +175,8 @@ def domain_ari_nmi(
         return {"ari": float("nan"), "nmi": float("nan")}
 
     try:
-        from sklearn.cluster import KMeans  # type: ignore
-        from sklearn.metrics import (  # type: ignore
+        from sklearn.cluster import KMeans
+        from sklearn.metrics import (
             adjusted_mutual_info_score,
             adjusted_rand_score,
         )
@@ -185,7 +185,7 @@ def domain_ari_nmi(
 
     if coords_truth is not None and coords_recon is not None:
         try:
-            from scipy.spatial import cKDTree  # type: ignore
+            from scipy.spatial import cKDTree
 
             _, recon_idx = cKDTree(coords_recon).query(coords_truth, k=1)
             X_truth_cmp = X_truth
@@ -229,7 +229,7 @@ def celltype_proportion_spearman(
         return float("nan")
 
     try:
-        from scipy.stats import spearmanr  # type: ignore
+        from scipy.stats import spearmanr
 
         rho, _ = spearmanr(t_counts, r_counts)
         return float(rho) if not np.isnan(rho) else float("nan")
