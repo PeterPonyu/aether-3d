@@ -10,6 +10,7 @@ import pytorch_lightning as pl
 
 from aether_3d.flow import create_flow_transport, FlowSampler, LinearPath
 from aether_3d.flow.integrators import ode as ode_integrator
+from aether_3d.flow.integrators import sde as sde_integrator
 from aether_3d.config.aether_config import Aether3DConfig
 from aether_3d.core.aether_reconstructor import AetherReconstructor
 from aether_3d.data.trajectory_dataset import SerialSliceTrajectoryDataset
@@ -106,6 +107,44 @@ def test_pytorch_uot_and_cost_parity():
     assert isinstance(w_pt, torch.Tensor)
     assert len(src_pt) == 100
     assert w_pt.sum() > 0.0
+
+
+def test_training_step_passes_real_class_conditioning():
+    from aether_3d.modules.aether_flow_module import AetherFlowModule
+
+    class CaptureModel(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.dummy = torch.nn.Parameter(torch.zeros(()))
+            self.seen_class_condition = None
+
+        def forward(self, state, t, class_condition):
+            self.seen_class_condition = class_condition.detach().clone()
+            return {
+                "vx": torch.zeros_like(state["x"]) + self.dummy,
+                "vg": torch.zeros_like(state["g"]) + self.dummy,
+                "vc": torch.zeros_like(state["c"]) + self.dummy,
+            }
+
+    cfg = Aether3DConfig(hidden_size=8, depth=1, num_heads=2, patch_size=4)
+    model = CaptureModel()
+    module = AetherFlowModule(cfg, model)  # type: ignore[arg-type]
+    batch = {
+        "x0": torch.zeros(2, 2),
+        "g0": torch.zeros(2, 4),
+        "c0": torch.tensor([[1.0, 0.0], [0.0, 1.0]]),
+        "x1": torch.ones(2, 2),
+        "g1": torch.ones(2, 4),
+        "c1": torch.tensor([[0.0, 1.0], [1.0, 0.0]]),
+        "z0": torch.zeros(2, 1),
+        "z1": torch.ones(2, 1),
+        "delta_z": torch.ones(2, 1),
+    }
+
+    module.training_step(batch, 0)
+
+    assert model.seen_class_condition is not None
+    assert torch.equal(model.seen_class_condition, batch["c0"])
 
 
 def test_aether_reconstructor_fit_runs_one_training_batch(tmp_path):
@@ -302,6 +341,42 @@ def test_ode_integrator_smoke():
     # dx/dt = -x  →  x(t) = x0 * exp(-t)  →  x(1) ≈ 0.368 * x0
     expected = x_start * np.exp(-1.0)
     assert torch.allclose(x_end, expected, atol=0.15)
+
+
+def test_ode_fixed_step_num_steps_counts_intervals():
+    calls = []
+
+    def drift(x: torch.Tensor, t: torch.Tensor) -> torch.Tensor:
+        calls.append(float(t[0].item()))
+        return torch.ones_like(x)
+
+    x_start = torch.zeros(2, 1)
+    integrator = ode_integrator(
+        drift, t0=0.0, t1=1.0, num_steps=4, solver_type="euler"
+    )
+    x_end = integrator(x_start)
+
+    assert torch.allclose(x_end, torch.ones_like(x_start))
+    assert len(calls) == 4
+
+
+def test_sde_sampler_type_changes_heun_drift_path_with_zero_diffusion():
+    def drift(x: torch.Tensor, t: torch.Tensor) -> torch.Tensor:
+        return x
+
+    def diffusion(x: torch.Tensor, t: torch.Tensor) -> torch.Tensor:
+        return torch.zeros_like(x)
+
+    x_start = torch.ones(3, 1)
+    euler = sde_integrator(
+        drift, diffusion, t0=0.0, t1=1.0, num_steps=1, sampler_type="Euler"
+    )
+    heun = sde_integrator(
+        drift, diffusion, t0=0.0, t1=1.0, num_steps=1, sampler_type="Heun"
+    )
+
+    assert torch.allclose(euler(x_start), torch.full_like(x_start, 2.0))
+    assert torch.allclose(heun(x_start), torch.full_like(x_start, 2.5))
 
 
 def test_flow_sampler_ode_shape():

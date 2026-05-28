@@ -133,11 +133,21 @@ def compute_uot_coupling(
     rng = rng or np.random.default_rng()
 
     if not _HAS_POT:
-        # Fallback for environments without POT
-        src = rng.integers(0, n0, n_samples)
-        tgt = rng.integers(0, n1, n_samples)
-        weights = np.ones(n_samples) / n_samples
-        return src, tgt, weights
+        warnings.warn(
+            "POT is unavailable; using the PyTorch Sinkhorn UOT fallback instead "
+            "of random source/target pairings.",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+        generator = torch.Generator().manual_seed(int(rng.integers(0, 2**31 - 1)))
+        src_t, tgt_t, weights_t = compute_uot_coupling_pytorch(
+            torch.as_tensor(cost, dtype=torch.float32),
+            reg=reg,
+            tau=tau,
+            n_samples=n_samples,
+            generator=generator,
+        )
+        return src_t.cpu().numpy(), tgt_t.cpu().numpy(), weights_t.cpu().numpy()
 
     a = np.ones(n0) / n0
     b = np.ones(n1) / n1

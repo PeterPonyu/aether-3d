@@ -17,6 +17,7 @@ from torchdiffeq import odeint
 
 
 SolverType = Literal["dopri5", "rk4", "euler", "heun", "midpoint"]
+_FIXED_STEP_SOLVERS = {"rk4", "euler", "heun", "midpoint"}
 
 
 def ode(
@@ -38,7 +39,13 @@ def ode(
     def sample(x_start: torch.Tensor) -> torch.Tensor:
         if t0 == t1:
             return x_start
-        ts = torch.linspace(t0, t1, num_steps or 2, device=x_start.device)
+        if num_steps is not None and num_steps <= 0:
+            raise ValueError(f"num_steps must be positive, got {num_steps}")
+        if solver_type in _FIXED_STEP_SOLVERS and num_steps is not None:
+            n_timepoints = num_steps + 1
+        else:
+            n_timepoints = num_steps or 2
+        ts = torch.linspace(t0, t1, n_timepoints, device=x_start.device)
         sol = odeint(
             lambda t, x: drift(x, t.expand(x.shape[0]).to(x.device)),
             x_start,
@@ -53,7 +60,7 @@ def ode(
 
 
 def sde(
-    drift: Callable[[torch.Tensor, torch.Tensor, torch.Tensor], torch.Tensor],
+    drift: Callable[[torch.Tensor, torch.Tensor], torch.Tensor],
     diffusion: Callable[[torch.Tensor, torch.Tensor], torch.Tensor],
     *,
     t0: float = 0.0,
@@ -65,17 +72,31 @@ def sde(
 
     drift and diffusion receive (x, t) and return tensors of matching shape.
     """
+    if num_steps <= 0:
+        raise ValueError(f"num_steps must be positive, got {num_steps}")
+    if sampler_type not in {"Euler", "Euler-Maruyama", "Heun"}:
+        raise ValueError(f"unsupported sampler_type {sampler_type!r}")
 
     dt = (t1 - t0) / num_steps
 
     def sample(x: torch.Tensor) -> torch.Tensor:
+        if t0 == t1:
+            return x
         t = torch.full((x.shape[0],), t0, device=x.device)
         for _ in range(num_steps):
             d = drift(x, t)
             g = diffusion(x, t)
-            noise = torch.randn_like(x)
-            x = x + d * dt + g * noise * (dt**0.5)
-            t = t + dt
+            noise_scale = abs(dt) ** 0.5
+            dW = torch.randn_like(x) * noise_scale
+            if sampler_type == "Heun":
+                x_pred = x + d * dt + g * dW
+                t_next = t + dt
+                d_next = drift(x_pred, t_next)
+                x = x + 0.5 * (d + d_next) * dt + g * dW
+                t = t_next
+            else:
+                x = x + d * dt + g * dW
+                t = t + dt
         return x
 
     return sample
