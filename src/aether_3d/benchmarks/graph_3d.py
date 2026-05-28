@@ -1,10 +1,8 @@
 """3D graph topology metrics for vascular-network / connectivity analysis.
 
-Round 13 W002 — closes the DeepSpatial §2.5 (vascular network 3D-graph
-topology) content-variety gap that R11 mislabeled gap-D/gap-L. The DEMO
-on a real BRCA IMC volume is data-blocked, but the metric helpers are
-pure graph-theory functions on a ``(coords_3d, edges)`` input and
-deterministic on synthetic graphs.
+Implements 3D-graph topology metrics for vascular-network connectivity
+analysis. Metric helpers are pure graph-theory functions on a
+``(coords_3d, edges)`` input and deterministic on synthetic graphs.
 
 All functions are NumPy-only; no graph library dependency. An edge list
 is expected as ``edges: Iterable[(u, v)]`` with integer node indices; we

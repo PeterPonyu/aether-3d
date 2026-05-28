@@ -48,7 +48,7 @@ def main():
         "--use-real-baseline",
         action="store_true",
         help=(
-            "Opt into local DeepSpatial baseline h5ad files when present. The default is synthetic "
+            "Opt into local baseline h5ad files from data/baselines/ when present. The default is synthetic "
             "data so CI/smoke runs stay bounded and avoid very large UOT category counts."
         ),
     )
@@ -57,7 +57,7 @@ def main():
     print("=== Deep Aether3D Pipeline Verification ===")
 
     # Auto-detect real baseline data inside the standalone repo
-    # (MERFISH hypothalamus slices from the original DeepSpatial baseline).
+    # (MERFISH hypothalamus slices from the baseline data directory).
     # parents[2] resolves to <repo>/ regardless of where this script is
     # imported from, so the standalone clone never silently couples to a
     # parent-monorepo layout (issue #16).
@@ -71,7 +71,7 @@ def main():
     if args.use_real_baseline and DATA_ROOT.exists():
         h5ads = sorted(DATA_ROOT.glob("merfish_*.h5ad"))
         if h5ads:
-            print(f"[INFO] Found real DeepSpatial baseline data at {DATA_ROOT}")
+            print(f"[INFO] Found baseline data at {DATA_ROOT}")
             print(
                 f"       Loading {len(h5ads)} real serial slices for E2E verification.\n"
             )

@@ -1,7 +1,7 @@
 """
 Aether3D Configuration — Pydantic model for 3D reconstruction.
 
-Replaces all the scattered hyperparameters from the original DeepSpatial core.py
+Replaces all the scattered hyperparameters from the baseline reference implementation
 with a clean, validated, serializable config.
 """
 

@@ -2,7 +2,7 @@
 """
 High-fidelity Synthetic Serial Slice Generator for Aether3D
 
-Generates realistic 2D spatial slices that mimic what DeepSpatial used in its tutorials
+Generates realistic 2D spatial slices that mimic MERFISH-style serial-section tutorial data
 (MERFISH-style hypothalamus, STARmap brain, IMC breast, etc.):
 
 - Spatial coordinates with realistic cell-type domains
@@ -92,7 +92,7 @@ def generate_synthetic_serial_slices(
 
 if __name__ == "__main__":
     slices, classes = generate_synthetic_serial_slices()
-    print(f"Generated {len(slices)} high-fidelity synthetic serial slices (mimics DeepSpatial/MERFISH-style)")
+    print(f"Generated {len(slices)} high-fidelity synthetic serial slices (mimics MERFISH-style)")
     print(f"  Cells per slice ~{len(slices[0])}")
     print(f"  Classes: {classes}")
     print(f"  Z range: 0 to {(len(slices)-1)*10}")

@@ -1,9 +1,8 @@
 """Cellular neighborhood + distance-band enrichment metrics.
 
-Round 12 W004 — closes the DeepSpatial §2.3 / §2.4 cellular-neighborhood
-content-variety gap. Provides radius-R distance-band enrichment of
-cell types around a query cell type and a z-axis depth-binned density
-profile (the Fig 3g style plot in the BRCA IMC section).
+Implements cellular-neighbourhood radius enrichment and z-depth density
+profiling. Provides radius-R distance-band enrichment of cell types
+around a query cell type and a z-axis depth-binned density profile.
 """
 
 from __future__ import annotations
@@ -108,7 +107,7 @@ def z_axis_density_around(
 ) -> dict[str, Any]:
     """Z-axis depth-binned density of each cell type around `query_label` cells.
 
-    Reproduces the DeepSpatial Fig 3g style plot: for each cell of
+    Implements a z-axis depth-binned density profile plot: for each cell of
     `query_label`, look at neighboring cells (optionally constrained to
     an xy-radius), bin them by their z-coordinate, and report per-cell-type
     density per z-bin.
@@ -181,7 +180,7 @@ def per_region_proportion_spearman(
     """For each spatial region, compute Spearman correlation of cell-type
     proportions between the labels observed here and a truth reference.
 
-    Mirrors the per-region Spearman panel (DeepSpatial §2.5 / Fig 5e):
+    Computes per-region cell-type proportion Spearman correlation:
     when a multi-region reconstruction is available, this helper loops
     over regions and reports per-region cell-type proportion agreement.
 

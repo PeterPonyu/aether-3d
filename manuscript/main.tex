@@ -80,8 +80,8 @@ ClusteringIntegrationBenchmark2024,You2024SequencingST,Cervilla2026SixCancerPlat
 Prior art spans alignment-only
 methods, 2.5D virtual-slice interpolators, and continuous-field
 generative models; we cite these as motivation rather than re-using their
-methodology, with DeepSpatial treated as an aspirational large-scale prior-art
-reference rather than a reproduced result~\cite{Yang2026DeepSpatial}.
+methodology, with the baseline reference treated as an aspirational large-scale prior-art
+comparison rather than a reproduced result~\cite{Yang2026DeepSpatial}.
 \textsc{Aether3D} builds on entropic optimal
 transport~\cite{Cuturi2013Sinkhorn} for slice coupling, flow
 matching~\cite{Lipman2023FlowMatching} for the velocity field, and
@@ -323,7 +323,7 @@ sub-cellular structures (vascular lumens, axonal tracts) are not
 represented. Third, the vascular-network 3D-graph topology metrics ship
 as a callable module
 (\texttt{aether\_3d.benchmarks.graph\_3d}) but are exercised only on
-synthetic graphs; the DeepSpatial \S2.5 BRCA-IMC vascular demo waits
+synthetic graphs; the BRCA-IMC vascular-network demo~\cite{Yang2026DeepSpatial} waits
 for the Day~7 IMC volume.
 
 \subsection{Future work}
@@ -336,9 +336,8 @@ distance-band neighborhood-heatmap composer skeleton at
 re-driven against real cellular neighborhoods. Subsequent days unlock
 the multi-planar (sagittal/coronal/horizontal) virtual-plane composer
 on real coordinates (Day~7) and the per-brain-region cell-type
-Spearman panel on the ABC mouse-brain section ladder (Day~8). The
-39-million-cell whole-atlas reconstruction reported by DeepSpatial \S2.5
-is cited rather than reproduced~\cite{Yang2026DeepSpatial}; we scale gradually section by section
+Spearman panel on the ABC mouse-brain section ladder (Day~8).
+The 39-million-cell whole-atlas reconstruction is cited rather than reproduced~\cite{Yang2026DeepSpatial}; we scale gradually section by section
 from the calendar Day~2 anchor (section C57BL6J-638850.31). Each
 transition is gated by the claim-ledger update described above; no
 claim graduates without linked evidence.

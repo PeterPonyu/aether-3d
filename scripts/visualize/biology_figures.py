@@ -5,8 +5,8 @@ Aether3D biology figure pack — what the model actually does.
 Runs in three modes:
 
   synthetic  read results/benchmark/volumes/<config>.h5ad from the sweep
-  real       auto-detect data/baselines/serial3d_ref/merfish_mouse_hypothalamus/
-             merfish_*.h5ad, train a small AetherFlow + reconstruct a
+  real       auto-detect the baseline data directory (data/baselines/)
+             for merfish_*.h5ad, train a small AetherFlow + reconstruct a
              continuous volume
   all        both
 
