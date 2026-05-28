@@ -158,6 +158,40 @@ The 10x Visium HD pages (#4, #5) are verified, but prefer the
 - **Canonical registry & audit trail:** `ST_research/datasets/DATASET_REGISTRY.md`
   and `ST_research/audits/`.
 
+## Extended validation datasets
+
+Independent raw-count + serial/Z verification (2026-05-28) of the originally
+recommended datasets against `ST_research/datasets/DATASET_REGISTRY.md`, plus
+the genuinely-serial replacements/expansions filed as new ingestion issues.
+Aether3D needs **raw integer counts AND multiple aligned sections along a real
+Z axis**; a dataset can pass the raw-count test yet still fail the serial/3D
+test (single section, or independent samples with no physical Z).
+
+### Verification verdict table (existing recommendations)
+
+| Issue | Dataset | Raw-count artifact | Raw count? | Serial / Z-axis suitability | Verdict | Action |
+|---|---|---|:--:|---|:--:|---|
+| #66 | MERFISH Mouse Brain Receptor Map (#14) | `cell_by_gene_S#R#.csv` (integer) + `cell_metadata_S#R#.csv` | ✅ | Only **3 coronal Z-levels** (3 slices × 3 *replicates* = redundancy, not depth) — coarse stack, not dense serial | ⚠️ | Keep (coarse 3D); dense-serial upgrade → **#71** |
+| #67 | Visium HD Mouse Brain (#4) | `binned_outputs` → `filtered_feature_bc_matrix.h5` (integer) | ✅ | **Single capture = one 2D section**, no Z-axis, cannot stack alone | ❌ serial | Replacement → **#72** |
+| #68 | Visium HD Tonsil (#5) | `binned_outputs` → `filtered_feature_bc_matrix.h5` (integer) | ✅ | **Single capture**, no adjacent serial tonsil sections released — least serial-suitable | ❌ serial | Replacement → **#72** |
+| #69 | GSE223561 liver regeneration (#17) | `GSE223561_RAW.tar` MTX/TSV (integer UMI) | ✅ | SuperSeries = healthy/POD/APAP across timepoints & 2 species → **independent samples, NOT serial sections**; no physical Z | ❌ serial | Replacement → **#73** |
+
+> **Correction retained:** GSE223561 is human liver **REGENERATION, NOT cancer** (~9.1 GB).
+
+### New genuinely-serial / 3D datasets (filed as ingestion issues)
+
+| Issue | Dataset | Accession / source | Platform | Sections / Z-availability | Raw-count artifact | Serial / Z fit |
+|---|---|---|---|---|---|---|
+| #71 | Allen/Zhuang 2023 MERFISH whole mouse brain | ABC Atlas `Zhuang-ABCA-1..4` ([portal](https://alleninstitute.github.io/abc_atlas_access/)) | MERFISH (single-cell) | **~147 serial coronal sections** of one brain + sagittal sets; `brain_section_label` + 3D CCF coords | ✅ raw cell-by-gene `.h5ad` + metadata + CCF coords (AWS `allen-brain-cell-atlas`) | ★ dense serial Z-stack — **dense-serial upgrade for #66** |
+| #72 | 10x Visium Mouse Brain Serial Sections | [10x datasets](https://www.10xgenomics.com/datasets/mouse-brain-serial-section-1-sagittal-anterior-1-standard-1-0-0) (CC BY 4.0) | Visium v1 (spot) | **4 serial sections** (Sagittal Anterior S1/S2 + Posterior S1/S2) | ✅ per-section `filtered_feature_bc_matrix.h5` (integer UMI) + `spatial/` | genuinely multi-section Visium — **replaces #67/#68 serial gap** |
+| #73 | Stereo-seq MOSTA mouse organogenesis | [CNGB MOSTA](https://db.cngb.org/stomics/mosta/) / raw `CNP0001543` | Stereo-seq (sub-cellular) | E16.5 **13 serial sagittal sections of a single embryo** (53 total) → paper's **3D reconstruction** | ✅ `.gef` / `.h5ad` raw counts + spatial | ★ true serial 3D — **replaces #69** |
+| #74 | STARmap PLUS adult mouse CNS 3D | Shi et al. 2023 *Nature* ([PMC](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC10709140/)); SODB / Zenodo `8092024` | STARmap PLUS (in-situ, 3D) | native **3D volumes** (194×194×345 nm voxels), per-cell x/y/**z** | ✅ per-cell gene counts + 3D coords (⚠️ exact hotlink unverified — use SODB) | volumetric 3D — serial/3D expansion |
+
+> Per the OT-coupling + flow-matching design, every ingested stack must yield a
+> Python list of `z_coord`-ordered AnnData sections (`SerialSliceTrajectoryDataset`
+> requires ≥2 slices). Datasets marked ❌ above are retained only as
+> single-section / coarse stress targets, never as the primary serial stack.
+
 ## Next steps
 
 Ingestion of these datasets is tracked as granular per-dataset GitHub issues
