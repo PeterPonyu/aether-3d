@@ -1,12 +1,8 @@
 #!/usr/bin/env python3
-import os
 import sys
 import argparse
 from pathlib import Path
 import numpy as np
-import scanpy as sc
-import anndata as ad
-import torch
 
 # Add src and project root to pythonpath
 project_root = Path(__file__).resolve().parents[2]

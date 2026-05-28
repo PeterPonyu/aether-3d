@@ -71,7 +71,7 @@ def render_multiplanar_slicing(volume: AnnData, out_path: Path, marker: Optional
         ax_gene.set_xticks([]); ax_gene.set_yticks([])
         ax_gene.set_aspect("equal", adjustable="datalim")
         fig.colorbar(sc_h, ax=ax_gene, fraction=0.04, label=str(marker))
-    fig.suptitle(f"Multi-planar virtual cross-sections of the reconstructed volume", fontsize=11)
+    fig.suptitle("Multi-planar virtual cross-sections of the reconstructed volume", fontsize=11)
     fig.tight_layout()
     fig.savefig(out_path, dpi=150)
     plt.close(fig)
