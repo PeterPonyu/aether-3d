@@ -178,6 +178,17 @@ class AetherReconstructor:
                 self._get_onehot(ad1, idx_all1), dtype=torch.float32, device=model_device
             )
 
+            # Per-cell z coordinates — same source as SerialSliceTrajectoryDataset
+            # so that the inference state matches training inputs (issue #82).
+            z0_all = torch.tensor(
+                np.asarray(ad0.obs[self.cfg.z_key].values, dtype=np.float32).reshape(-1, 1),
+                device=model_device,
+            )
+            z1_all = torch.tensor(
+                np.asarray(ad1.obs[self.cfg.z_key].values, dtype=np.float32).reshape(-1, 1),
+                device=model_device,
+            )
+
             # UOT-based cell pairing: hybrid cost (spatial + gene cosine + class)
             cost = compute_hybrid_cost(x0_all, g0_all, c0_all, x1_all, g1_all, c1_all)
             torch_generator = torch.Generator(device=cost.device).manual_seed(
@@ -193,6 +204,9 @@ class AetherReconstructor:
             src_np = (
                 src_idx.cpu().numpy() if isinstance(src_idx, torch.Tensor) else src_idx
             )
+            tgt_np = (
+                tgt_idx.cpu().numpy() if isinstance(tgt_idx, torch.Tensor) else tgt_idx
+            )
             w_np = (
                 weights.cpu().numpy() if isinstance(weights, torch.Tensor) else weights
             )
@@ -203,9 +217,15 @@ class AetherReconstructor:
 
             n_available = len(src_np)
 
-            # ODE drift factory: wraps the velocity field as dx/dt = v(state, t, y)
+            # ODE drift factory: wraps the velocity field as dx/dt = v(state, t, y).
+            # z_start / delta_z thread the same z conditioning the training-time
+            # SerialSliceTrajectoryDataset emits (issue #82). The training path
+            # interpolates z linearly across t in [0, 1]; we mirror that here so
+            # the model sees identical z / delta_z statistics at inference.
             def make_drift(
                 class_cond: torch.Tensor,
+                z_start: torch.Tensor,
+                delta_z: torch.Tensor,
             ) -> Callable[[torch.Tensor, torch.Tensor], torch.Tensor]:
                 def drift_fn(
                     concat_state: torch.Tensor, t_vals: torch.Tensor
@@ -213,7 +233,19 @@ class AetherReconstructor:
                     x_part = concat_state[:, :spatial_dim]
                     g_part = concat_state[:, spatial_dim : spatial_dim + gene_dim]
                     c_part = concat_state[:, spatial_dim + gene_dim :]
-                    state = {"x": x_part, "g": g_part, "c": c_part}
+                    # Broadcast scalar/per-sample t to the per-sample z shape.
+                    t_b = t_vals.reshape(-1)
+                    if t_b.numel() == 1:
+                        zt = z_start + t_b * delta_z
+                    else:
+                        zt = z_start + t_b.view(-1, 1) * delta_z
+                    state = {
+                        "x": x_part,
+                        "g": g_part,
+                        "c": c_part,
+                        "z": zt,
+                        "delta_z": delta_z,
+                    }
                     with torch.no_grad():
                         vel = model(state, t_vals, class_cond)
                     return torch.cat([vel["vx"], vel["vg"], vel["vc"]], dim=1)
@@ -244,9 +276,13 @@ class AetherReconstructor:
                     )
 
                 s0 = src_np[chosen]
+                t1 = tgt_np[chosen]
                 x_start = x0_all[s0]
                 g_start = g0_all[s0]
                 c_start = c0_all[s0]
+                z_start = z0_all[s0]
+                z_end = z1_all[t1]
+                delta_z = z_end - z_start
 
                 n_current = x_start.shape[0]
                 # ODE integration from t=0 to t=d using adaptive dopri5 solver.
@@ -254,7 +290,7 @@ class AetherReconstructor:
                 # no longer needs a caller-side branch.
                 concat_start = torch.cat([x_start, g_start, c_start], dim=1)
                 integrator = ode(
-                    drift=make_drift(c_start),
+                    drift=make_drift(c_start, z_start, delta_z),
                     t0=0.0,
                     t1=float(d),
                     solver_type="dopri5",
