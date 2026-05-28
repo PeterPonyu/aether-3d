@@ -1,7 +1,7 @@
 """Distance-band cellular neighborhood heatmap composer skeleton.
 
-Round 13 W006 — closes the DeepSpatial §2.3 (Fig 3) cellular-neighborhood
-heatmap composer skeleton gap. The composer accepts an enrichment matrix
+Cellular-neighbourhood distance-band heatmap composer for Aether3D.
+The composer accepts an enrichment matrix
 produced by ``aether_3d.benchmarks.neighborhood.radius_neighborhood_enrichment``
 across multiple query labels and renders a (target × neighbor) matrix
 with a diverging colormap centered at 1.0 (no enrichment).

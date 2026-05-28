@@ -212,8 +212,7 @@ def celltype_distribution_cosine(
 ) -> float:
     """Cosine similarity of per-label cell-count vectors.
 
-    Round 11 W004 — closes the DeepSpatial Section 2.2 cell-type
-    cosine-similarity gap. Complements `celltype_proportion_spearman`:
+    Implements cell-type proportion cosine-similarity. Complements `celltype_proportion_spearman`:
     Spearman captures rank agreement (e.g. "which cell types are
     most/least frequent"); cosine captures vector-direction agreement
     in raw-count space (less affected by minor rank perturbations).
@@ -250,8 +249,8 @@ def virtual_plane(
 
     Round 12 W005 — generalizes `virtual_slice_at_depth` to support
     sagittal (yz-plane, axis='x'), coronal (xz-plane, axis='y'), and
-    horizontal (xy-plane, axis='z') sectioning, matching DeepSpatial
-    §2.6 multi-planar virtual slicing.
+    horizontal (xy-plane, axis='z') sectioning, supporting multi-planar
+    (sagittal / coronal / horizontal) virtual slicing.
 
     The xy coordinates come from `obsm[spatial_key]` (shape (N, 2));
     the z coordinate comes from `obs[physical_z_key]`. For axis='x'
@@ -319,8 +318,8 @@ def virtual_slice_at_depth(
 ) -> ad.AnnData:
     """Extract a 2D virtual slice from a 3D volume AnnData at depth `z_target`.
 
-    Round 11 W005 — DeepSpatial Section 2.3 reports virtual-slice
-    extraction at arbitrary depths along the z-axis. This helper is
+    The baseline reference reports virtual-slice extraction at arbitrary
+    depths along the z-axis. This helper is
     the slice-extraction primitive around the trained flow-ODE
     reconstruction: caller passes a continuous-volume AnnData whose
     `.obs[physical_z_key]` records each cell's z-coord (in micrometers
