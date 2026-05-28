@@ -13,7 +13,7 @@ hybrid-cost weighting choices.
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
-from typing import Sequence
+from typing import Any, Sequence
 
 import numpy as np
 
@@ -36,7 +36,7 @@ class UOTAblationResult:
     mean_true_pair_mass: float  # average P[i, true_j[i]] under row-normalized soft coupling
     runtime_s: float
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         d = asdict(self)
         d["point"] = asdict(self.point)
         return d
@@ -49,7 +49,7 @@ def make_paired_slices(
     spatial_noise: float = 1.0,
     gene_noise: float = 0.1,
     seed: int = 0,
-) -> tuple[dict, dict, np.ndarray]:
+) -> tuple[dict[str, np.ndarray], dict[str, np.ndarray], np.ndarray]:
     """Build two synthetic slices where slice 1 is a noisy copy of slice 0.
 
     Returns (slice0, slice1, true_permutation) where true_permutation[i] is the
@@ -168,7 +168,7 @@ def run_uot_ablation(
     return out
 
 
-def aggregate_ablation(results: Sequence[UOTAblationResult]) -> dict:
+def aggregate_ablation(results: Sequence[UOTAblationResult]) -> dict[str, Any]:
     """JSON-serializable aggregation for the heatmap figure."""
     return {
         "schema_version": "1",
