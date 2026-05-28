@@ -22,6 +22,13 @@ except ImportError:
     ot = None
 
 
+# Default RNG seed used when callers do not supply ``rng``/``torch_generator``
+# to ``compute_uot_coupling``/``compute_uot_coupling_pytorch``. Documented so
+# that the default sampling path is reproducible across calls. Override by
+# passing an explicit generator.
+_DEFAULT_UOT_RNG_SEED = 0
+
+
 def compute_hybrid_cost(
     x0: npt.NDArray[Any] | torch.Tensor,
     g0: npt.NDArray[Any] | torch.Tensor,
@@ -135,6 +142,11 @@ def compute_uot_coupling(
     """
     Unbalanced OT coupling using unbalanced Sinkhorn.
     Automatically routes to GPU solver if cost is a PyTorch tensor, otherwise uses POT on CPU.
+
+    Reproducibility: when ``rng`` is ``None``, this function falls back to a
+    deterministic ``np.random.default_rng(_DEFAULT_UOT_RNG_SEED)`` so that the
+    public default path produces the same coupling across calls. Pass an
+    explicit ``rng`` for application-controlled streams.
     """
     if isinstance(cost, torch.Tensor):
         return compute_uot_coupling_pytorch(
@@ -144,7 +156,8 @@ def compute_uot_coupling(
     n0, n1 = cost.shape
     if n0 == 0 or n1 == 0:
         raise ValueError(f"UOT coupling requires non-empty cost axes; got {cost.shape}")
-    rng = rng or np.random.default_rng()
+    if rng is None:
+        rng = np.random.default_rng(_DEFAULT_UOT_RNG_SEED)
 
     if not _HAS_POT:
         warnings.warn(
@@ -189,11 +202,19 @@ def compute_uot_coupling_pytorch(
     """
     Unbalanced OT coupling solver on GPU/CPU in PyTorch.
     Mathematical parity with POT's sinkhorn_unbalanced.
+
+    Reproducibility: when ``generator`` is ``None``, this function falls back
+    to a deterministic ``torch.Generator`` seeded from
+    ``_DEFAULT_UOT_RNG_SEED`` so that the default sampling path is
+    reproducible. Pass an explicit ``generator`` for application-controlled
+    streams.
     """
     n0, n1 = cost.shape
     if n0 == 0 or n1 == 0:
         raise ValueError(f"UOT coupling requires non-empty cost axes; got {tuple(cost.shape)}")
     device = cost.device
+    if generator is None:
+        generator = torch.Generator(device=device).manual_seed(_DEFAULT_UOT_RNG_SEED)
     dtype = cost.dtype
     solver_cost = cost
     if cost.dtype in (torch.float16, torch.bfloat16, torch.float32):
