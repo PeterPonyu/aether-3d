@@ -32,7 +32,7 @@ class ASIGNAdapter(VolumeBaseAdapter):
 
     def __init__(
         self,
-        wsi_stack: Optional[list] = None,
+        wsi_stack: Optional[list[Any]] = None,
         device: str = "cpu",
         **kwargs: Any,
     ) -> None:

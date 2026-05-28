@@ -19,6 +19,7 @@ from typing import Any
 
 import anndata as ad
 import numpy as np
+import pandas as pd
 import scanpy as sc
 
 from ..contract import VolumeAdapterInput, VolumeBaseAdapter
@@ -81,9 +82,9 @@ class InterpolAIAdapter(VolumeBaseAdapter):
                     "interpolai module does not expose interpolate() or a model class"
                 )
 
-            def _interp(frames, n_intermediate):
+            def _interp(frames: np.ndarray, n_intermediate: int) -> np.ndarray:
                 m = model_cls(device=self.device)
-                return m.interpolate(frames, n_intermediate=n_intermediate)
+                return np.asarray(m.interpolate(frames, n_intermediate=n_intermediate))
 
             interpolate = _interp
 
@@ -152,7 +153,7 @@ def _slice_to_grid(adata: ad.AnnData, spatial_key: str, grid_size: int) -> np.nd
 
 def _grid_to_slice(
     grid: np.ndarray,
-    var_names,
+    var_names: pd.Index,
     z_value: float,
     z_key: str,
     spatial_key: str,

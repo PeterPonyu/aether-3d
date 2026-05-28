@@ -8,7 +8,7 @@ unbalanced Sinkhorn solver in PyTorch, with backward compatible NumPy CPU fallba
 from __future__ import annotations
 
 import warnings
-from typing import Tuple
+from typing import Tuple, cast
 
 import numpy as np
 import torch
@@ -44,8 +44,17 @@ def compute_hybrid_cost(
     Supports both NumPy arrays and PyTorch Tensors.
     """
     if isinstance(x0, torch.Tensor):
+        # By contract all six inputs share a backend; isinstance narrows x0
+        # only, so cast the rest to satisfy the all-Tensor PyTorch overload.
         return compute_hybrid_cost_pytorch(
-            x0, g0, c0, x1, g1, c1, alpha_spatial, lambda_class
+            x0,
+            cast(torch.Tensor, g0),
+            cast(torch.Tensor, c0),
+            cast(torch.Tensor, x1),
+            cast(torch.Tensor, g1),
+            cast(torch.Tensor, c1),
+            alpha_spatial,
+            lambda_class,
         )
 
     eps = 1e-9
@@ -73,7 +82,7 @@ def compute_hybrid_cost(
     cost_class = np.clip(1.0 - np.dot(c0, c1.T), 0, 1) * lambda_class
 
     C = alpha_spatial * cost_spatial + (1 - alpha_spatial) * cost_gene + cost_class
-    return C
+    return np.asarray(C)
 
 
 def compute_hybrid_cost_pytorch(
@@ -215,8 +224,12 @@ def compute_uot_coupling_pytorch(
         v = (b_t / torch.clamp(Ktu, min=1e-12)) ** fi
 
         # Converge check
-        err_u = torch.max(torch.abs(u - uprev)) / max(torch.max(torch.abs(u)), torch.max(torch.abs(uprev)), 1.0)
-        err_v = torch.max(torch.abs(v - vprev)) / max(torch.max(torch.abs(v)), torch.max(torch.abs(vprev)), 1.0)
+        err_u = torch.max(torch.abs(u - uprev)) / torch.clamp(
+            torch.maximum(torch.max(torch.abs(u)), torch.max(torch.abs(uprev))), min=1.0
+        )
+        err_v = torch.max(torch.abs(v - vprev)) / torch.clamp(
+            torch.maximum(torch.max(torch.abs(v)), torch.max(torch.abs(vprev))), min=1.0
+        )
         err = 0.5 * (err_u + err_v)
         if err < tol:
             break
