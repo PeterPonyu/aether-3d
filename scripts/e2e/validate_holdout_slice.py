@@ -1,12 +1,9 @@
 #!/usr/bin/env python3
-import os
 import sys
 import json
 import argparse
 from pathlib import Path
 import numpy as np
-import scanpy as sc
-import pandas as pd
 import torch
 from torch.utils.data import DataLoader
 from scipy.stats import pearsonr
