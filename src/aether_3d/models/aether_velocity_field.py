@@ -11,29 +11,41 @@ Fresh implementation — no code copied from the baseline reference implementati
 from __future__ import annotations
 
 import math
+from typing import cast
+
 import torch
 import torch.nn as nn
-from timm.models.vision_transformer import Attention, Mlp
+
+# timm ships a py.typed marker but does not re-export these symbols from its
+# package __init__, so mypy flags them as not explicitly exported even though
+# they are public, importable classes. Narrow ignore for this third-party gap.
+from timm.models.vision_transformer import Attention, Mlp  # type: ignore[attr-defined]
 
 from .embeddings import TimestepEmbedder
 
 
-
-def modulate(x, shift, scale):
+def modulate(x: torch.Tensor, shift: torch.Tensor, scale: torch.Tensor) -> torch.Tensor:
     return x * (1 + scale.unsqueeze(1)) + shift.unsqueeze(1)
 
 
 class AetherBlock(nn.Module):
-    def __init__(self, hidden_size, num_heads, mlp_ratio=4.0):
+    def __init__(self, hidden_size: int, num_heads: int, mlp_ratio: float = 4.0):
         super().__init__()
         self.norm1 = nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6)
         self.attn = Attention(hidden_size, num_heads=num_heads, qkv_bias=True)
         self.norm2 = nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6)
         mlp_hidden = int(hidden_size * mlp_ratio)
-        self.mlp = Mlp(hidden_size, hidden_features=mlp_hidden, act_layer=lambda: nn.GELU(approximate="tanh"), drop=0)
+        # timm's Mlp types act_layer as type[Module]; a no-arg callable factory
+        # is accepted at runtime, so narrowly ignore the third-party arg-type gap.
+        self.mlp = Mlp(
+            hidden_size,
+            hidden_features=mlp_hidden,
+            act_layer=lambda: nn.GELU(approximate="tanh"),  # type: ignore[arg-type]
+            drop=0,
+        )
         self.adaLN = nn.Sequential(nn.SiLU(), nn.Linear(hidden_size, 6 * hidden_size, bias=True))
 
-    def forward(self, x, c):
+    def forward(self, x: torch.Tensor, c: torch.Tensor) -> torch.Tensor:
         s1, sc1, g1, s2, sc2, g2 = self.adaLN(c).chunk(6, dim=1)
         x = x + g1.unsqueeze(1) * self.attn(modulate(self.norm1(x), s1, sc1))
         x = x + g2.unsqueeze(1) * self.mlp(modulate(self.norm2(x), s2, sc2))
@@ -44,18 +56,18 @@ class AetherPatchEmbedder(nn.Module):
     """
     Embeds 1D vectors (e.g., gene expressions) into patch tokens via an MLP.
     """
-    def __init__(self, input_size, patch_size, hidden_size):
+    def __init__(self, input_size: int, patch_size: int, hidden_size: int):
         super().__init__()
         self.patch_size = patch_size
         self.num_patches = (input_size + patch_size - 1) // patch_size
-        
+
         self.mlp = nn.Sequential(
             nn.Linear(patch_size, hidden_size, bias=True),
             nn.SiLU(),
             nn.Linear(hidden_size, hidden_size, bias=True),
         )
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         B, L = x.shape
         # Pad if not divisible
         pad_size = (self.patch_size - (L % self.patch_size)) % self.patch_size
@@ -63,20 +75,20 @@ class AetherPatchEmbedder(nn.Module):
             x = torch.nn.functional.pad(x, (0, pad_size), "constant", 0)
         
         # Reshape to [Batch, Num_Patches, Patch_Size]
-        x = x.reshape(B, -1, self.patch_size) 
-        x = self.mlp(x) 
+        x = x.reshape(B, -1, self.patch_size)
+        x = self.mlp(x)
         return x
 
 
 class AetherFinalLayer(nn.Module):
     """The final layer of the model, projecting features back to the latent space."""
-    def __init__(self, hidden_size, patch_size, out_channels):
+    def __init__(self, hidden_size: int, patch_size: int, out_channels: int):
         super().__init__()
         self.norm_final = nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6)
         self.linear = nn.Linear(hidden_size, patch_size * out_channels, bias=True)
         self.adaLN_modulation = nn.Sequential(nn.SiLU(), nn.Linear(hidden_size, 2 * hidden_size, bias=True))
 
-    def forward(self, x, c):
+    def forward(self, x: torch.Tensor, c: torch.Tensor) -> torch.Tensor:
         shift, scale = self.adaLN_modulation(c).chunk(2, dim=1)
         x = modulate(self.norm_final(x), shift, scale)
         x = self.linear(x)
@@ -84,8 +96,10 @@ class AetherFinalLayer(nn.Module):
 
 
 import numpy as np
+from numpy.typing import NDArray
 
-def get_1d_sincos_pos_embed_from_grid(embed_dim, pos):
+
+def get_1d_sincos_pos_embed_from_grid(embed_dim: int, pos: NDArray[np.floating]) -> NDArray[np.floating]:
     assert embed_dim % 2 == 0
     omega = np.arange(embed_dim // 2, dtype=np.float64)
     omega /= embed_dim / 2.
@@ -95,9 +109,9 @@ def get_1d_sincos_pos_embed_from_grid(embed_dim, pos):
     emb_sin = np.sin(out)
     emb_cos = np.cos(out)
     emb = np.concatenate([emb_sin, emb_cos], axis=1)
-    return emb
+    return cast(NDArray[np.floating], emb)
 
-def get_1d_sincos_pos_embed(embed_dim, grid_size):
+def get_1d_sincos_pos_embed(embed_dim: int, grid_size: int) -> NDArray[np.floating]:
     grid = np.arange(grid_size, dtype=np.float32)
     return get_1d_sincos_pos_embed_from_grid(embed_dim, grid)
 
@@ -152,8 +166,8 @@ class MultiModalVelocityField(nn.Module):
 
         self.initialize_weights()
 
-    def initialize_weights(self):
-        def _basic_init(module):
+    def initialize_weights(self) -> None:
+        def _basic_init(module: nn.Module) -> None:
             if isinstance(module, nn.Linear):
                 nn.init.xavier_uniform_(module.weight)
                 if module.bias is not None:
@@ -164,43 +178,66 @@ class MultiModalVelocityField(nn.Module):
         pos_embed = get_1d_sincos_pos_embed(self.pos_embed.shape[-1], self.num_patches)
         self.pos_embed.data.copy_(torch.from_numpy(pos_embed).float().unsqueeze(0))
 
-        # Zero-out modulation and final layers for identity mapping at start
+        # Zero-out modulation and final layers for identity mapping at start.
+        # Indexing nn.Sequential yields a Tensor | Module union; the last entry
+        # is the nn.Linear we constructed, so narrow it back with cast.
         for block in self.blocks:
-            nn.init.constant_(block.adaLN[-1].weight, 0)
-            nn.init.constant_(block.adaLN[-1].bias, 0)
+            adaLN = cast(AetherBlock, block).adaLN
+            adaLN_linear = cast(nn.Linear, adaLN[-1])
+            nn.init.constant_(adaLN_linear.weight, 0)
+            nn.init.constant_(adaLN_linear.bias, 0)
 
-        nn.init.constant_(self.x_head.adaLN_modulation[-1].weight, 0)
-        nn.init.constant_(self.x_head.adaLN_modulation[-1].bias, 0)
+        x_head_mod = cast(nn.Linear, self.x_head.adaLN_modulation[-1])
+        nn.init.constant_(x_head_mod.weight, 0)
+        nn.init.constant_(x_head_mod.bias, 0)
         nn.init.constant_(self.x_head.linear.weight, 0)
         nn.init.constant_(self.x_head.linear.bias, 0)
 
-        nn.init.constant_(self.g_head.adaLN_modulation[-1].weight, 0)
-        nn.init.constant_(self.g_head.adaLN_modulation[-1].bias, 0)
+        g_head_mod = cast(nn.Linear, self.g_head.adaLN_modulation[-1])
+        nn.init.constant_(g_head_mod.weight, 0)
+        nn.init.constant_(g_head_mod.bias, 0)
         nn.init.constant_(self.g_head.linear.weight, 0)
         nn.init.constant_(self.g_head.linear.bias, 0)
 
-    def forward(self, xt_or_state, gt=None, t=None, zt=None, delta_z=None, ct=None):
+    def forward(
+        self,
+        xt_or_state: torch.Tensor | dict[str, torch.Tensor],
+        gt: torch.Tensor | None = None,
+        t: torch.Tensor | None = None,
+        zt: torch.Tensor | None = None,
+        delta_z: torch.Tensor | None = None,
+        ct: torch.Tensor | None = None,
+    ) -> dict[str, torch.Tensor] | tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        xt_tensor: torch.Tensor
+        gt_tensor: torch.Tensor
+        t_tensor: torch.Tensor
+        zt_tensor: torch.Tensor
+        delta_z_tensor: torch.Tensor
+        ct_tensor: torch.Tensor
         if isinstance(xt_or_state, dict):
             # Dictionary signature routing: forward(state, t, y)
             state = xt_or_state
-            xt_tensor = state.get("x")
-            gt_tensor = state.get("g")
-            
+            # .get() is typed Optional; runtime callers always supply "x"/"g",
+            # and downstream code already assumes their presence. Cast keeps the
+            # exact .get() runtime semantics while narrowing the static type.
+            xt_tensor = cast(torch.Tensor, state.get("x"))
+            gt_tensor = cast(torch.Tensor, state.get("g"))
+
             # Positional arguments: gt is passed as t, and t is passed as y
-            t_tensor = gt
-            ct_tensor = t  # this corresponds to the labels/class conditioning
-            
+            t_tensor = cast(torch.Tensor, gt)
+            ct_tensor = cast(torch.Tensor, t)  # the labels/class conditioning
+
             # Default/Fallback Z coordinates if missing from dict state
             zt_tensor = state.get("z", torch.zeros(xt_tensor.shape[0], 1, device=xt_tensor.device))
             delta_z_tensor = state.get("delta_z", torch.zeros(xt_tensor.shape[0], 1, device=xt_tensor.device))
         else:
             # Positional signature routing
             xt_tensor = xt_or_state
-            gt_tensor = gt
-            t_tensor = t
-            zt_tensor = zt
-            delta_z_tensor = delta_z
-            ct_tensor = ct
+            gt_tensor = cast(torch.Tensor, gt)
+            t_tensor = cast(torch.Tensor, t)
+            zt_tensor = cast(torch.Tensor, zt)
+            delta_z_tensor = cast(torch.Tensor, delta_z)
+            ct_tensor = cast(torch.Tensor, ct)
 
         gene_dim = gt_tensor.shape[1]
         x_feat = self.x_embedder(xt_tensor).unsqueeze(1) # [B, 1, D]
