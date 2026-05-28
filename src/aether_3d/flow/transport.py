@@ -97,6 +97,15 @@ class FlowTransport:
         if self.loss_weight == LossWeighting.VELOCITY:
             # Weight by the magnitude of the velocity (common trick)
             loss = loss * mean_flat(ut**2).detach()
+        elif self.loss_weight == LossWeighting.LIKELIHOOD:
+            # Per-sample weight = sigma(t)^2, the standard score-matching
+            # ELBO weighting that ties the regression objective to a data
+            # log-likelihood bound. See Song et al. 2021, "Score-Based
+            # Generative Modeling through SDEs". For LinearPath this is
+            # (1 - t)^2; for GVP / VP paths it follows the path's sigma.
+            # Issue #137 (was a silent no-op falling through to NONE).
+            sigma_t, _ = self.path.sigma(t)
+            loss = loss * (sigma_t ** 2).detach()
 
         return {"loss": loss.mean(), "t": t, "per_sample": loss}
 
