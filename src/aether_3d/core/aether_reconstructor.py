@@ -144,6 +144,10 @@ class AetherReconstructor:
 
         model = self.ema_model if hasattr(self, "ema_model") else self.model
         model.eval()
+        try:
+            model_device = next(model.parameters()).device
+        except StopIteration:
+            model_device = torch.device("cpu")
 
         for i in range(len(adata_list) - 1):
             ad0 = adata_list[i]
@@ -156,13 +160,21 @@ class AetherReconstructor:
             idx_all0 = np.arange(n0)
             idx_all1 = np.arange(n1)
 
-            x0_all = torch.tensor(ad0.obsm[self.cfg.spatial_key], dtype=torch.float32)
-            g0_all = torch.tensor(np.asarray(ad0.X), dtype=torch.float32)
-            c0_all = torch.tensor(self._get_onehot(ad0, idx_all0), dtype=torch.float32)
+            x0_all = torch.tensor(
+                ad0.obsm[self.cfg.spatial_key], dtype=torch.float32, device=model_device
+            )
+            g0_all = torch.tensor(np.asarray(ad0.X), dtype=torch.float32, device=model_device)
+            c0_all = torch.tensor(
+                self._get_onehot(ad0, idx_all0), dtype=torch.float32, device=model_device
+            )
 
-            x1_all = torch.tensor(ad1.obsm[self.cfg.spatial_key], dtype=torch.float32)
-            g1_all = torch.tensor(np.asarray(ad1.X), dtype=torch.float32)
-            c1_all = torch.tensor(self._get_onehot(ad1, idx_all1), dtype=torch.float32)
+            x1_all = torch.tensor(
+                ad1.obsm[self.cfg.spatial_key], dtype=torch.float32, device=model_device
+            )
+            g1_all = torch.tensor(np.asarray(ad1.X), dtype=torch.float32, device=model_device)
+            c1_all = torch.tensor(
+                self._get_onehot(ad1, idx_all1), dtype=torch.float32, device=model_device
+            )
 
             # UOT-based cell pairing: hybrid cost (spatial + gene cosine + class)
             cost = compute_hybrid_cost(x0_all, g0_all, c0_all, x1_all, g1_all, c1_all)
@@ -190,14 +202,14 @@ class AetherReconstructor:
             n_available = len(src_np)
 
             # ODE drift factory: wraps the velocity field as dx/dt = v(state, t, y)
-            def make_drift(ys_cond):
+            def make_drift(class_cond):
                 def drift_fn(concat_state, t_vals):
                     x_part = concat_state[:, :spatial_dim]
                     g_part = concat_state[:, spatial_dim : spatial_dim + gene_dim]
                     c_part = concat_state[:, spatial_dim + gene_dim :]
                     state = {"x": x_part, "g": g_part, "c": c_part}
                     with torch.no_grad():
-                        vel = model(state, t_vals, ys_cond)
+                        vel = model(state, t_vals, class_cond)
                     return torch.cat([vel["vx"], vel["vg"], vel["vc"]], dim=1)
 
                 return drift_fn
@@ -231,14 +243,12 @@ class AetherReconstructor:
                 c_start = c0_all[s0]
 
                 n_current = x_start.shape[0]
-                ys = torch.zeros(n_current, dtype=torch.long)
-
                 # ODE integration from t=0 to t=d using adaptive dopri5 solver.
                 # ode() returns identity when t0 == t1 (see #15), so depth 0
                 # no longer needs a caller-side branch.
                 concat_start = torch.cat([x_start, g_start, c_start], dim=1)
                 integrator = ode(
-                    drift=make_drift(ys),
+                    drift=make_drift(c_start),
                     t0=0.0,
                     t1=float(d),
                     solver_type="dopri5",
@@ -254,19 +264,19 @@ class AetherReconstructor:
 
                 # Build mini AnnData for this virtual layer
                 layer_adata = ad.AnnData(
-                    X=new_g.numpy(),
+                    X=new_g.detach().cpu().numpy(),
                     obs={
                         "source_slice": i,
                         "virtual_depth": d,
                         "z_3d": z_val,
                     },
                     obsm={
-                        "spatial_3d": np.hstack([new_x.numpy(), z_arr]),
-                        "spatial": new_x.numpy(),
+                        "spatial_3d": np.hstack([new_x.detach().cpu().numpy(), z_arr]),
+                        "spatial": new_x.detach().cpu().numpy(),
                     },
                 )
                 # Store predicted class probabilities
-                layer_adata.obsm["cell_class_vel"] = new_c.numpy()
+                layer_adata.obsm["cell_class_vel"] = new_c.detach().cpu().numpy()
                 all_cells.append(layer_adata)
 
             # Each adjacent-slice interval includes both endpoints; advance by

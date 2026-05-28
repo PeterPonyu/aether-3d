@@ -8,11 +8,10 @@ and the weighted multi-task loss (lambda_g, lambda_c).
 from __future__ import annotations
 
 from copy import deepcopy
-from typing import Any, Dict
+from typing import Dict
 
 import pytorch_lightning as pl
 import torch
-import torch.nn as nn
 
 from ..config.aether_config import Aether3DConfig
 from ..flow import create_flow_transport
@@ -60,8 +59,9 @@ class AetherFlowModule(pl.LightningModule):
         _, ct, uc_t = self.transport.path.plan(t, c0, c1)
         _, zt, _ = self.transport.path.plan(t, z0, z1)
 
-        # Simple label tensor placeholder (zeros)
-        y = torch.zeros(x0.shape[0], dtype=torch.long, device=x0.device)
+        # Condition on each source cell's encoded class rather than a constant
+        # placeholder, so class-specific dynamics can influence the velocity.
+        y = c0
 
         # Current state dictionary to pass to model
         state = {

@@ -63,9 +63,9 @@ def test_morans_i_per_gene_constant_gene_is_nan():
     X = rng.normal(size=(n_cells, n_genes)).astype(np.float32)
     X[:, 2] = 1.0  # constant gene
     coords = rng.uniform(0, 100, size=(n_cells, 2)).astype(np.float32)
-    I = morans_i_per_gene(X, coords, k=6)
-    assert np.isnan(I[2])
-    assert not np.isnan(I[0])
+    morans_i = morans_i_per_gene(X, coords, k=6)
+    assert np.isnan(morans_i[2])
+    assert not np.isnan(morans_i[0])
 
 
 def test_morans_i_spatially_structured_gene_has_positive_I():
@@ -74,10 +74,12 @@ def test_morans_i_spatially_structured_gene_has_positive_I():
     n_cells = 80
     coords = rng.uniform(0, 100, size=(n_cells, 2)).astype(np.float32)
     X = np.column_stack([coords[:, 0], rng.normal(size=n_cells)]).astype(np.float32)
-    I = morans_i_per_gene(X, coords, k=6)
-    assert I[0] > 0.2, f"spatially structured gene should have positive I, got {I[0]}"
+    morans_i = morans_i_per_gene(X, coords, k=6)
+    assert morans_i[0] > 0.2, (
+        f"spatially structured gene should have positive I, got {morans_i[0]}"
+    )
     # The noise gene should have I near 0.
-    assert abs(I[1]) < 0.3, f"noise gene I should be near 0, got {I[1]}"
+    assert abs(morans_i[1]) < 0.3, f"noise gene I should be near 0, got {morans_i[1]}"
 
 
 def test_morans_i_agreement_returns_finite_score_on_realistic_input():
@@ -107,6 +109,31 @@ def test_domain_ari_nmi_perfectly_matching_data():
     assert out["nmi"] > 0.9
 
 
+def test_domain_ari_nmi_uses_spatial_matching_not_row_order():
+    rng = np.random.default_rng(0)
+    coords = np.vstack([
+        rng.normal(0, 0.1, size=(30, 2)),
+        rng.normal(10, 0.1, size=(30, 2)),
+    ]).astype(np.float32)
+    X = np.vstack([
+        rng.normal(0, 0.1, size=(30, 4)),
+        rng.normal(5, 0.1, size=(30, 4)),
+    ]).astype(np.float32)
+    perm = rng.permutation(X.shape[0])
+
+    out = domain_ari_nmi(
+        X_truth=X,
+        X_recon=X[perm],
+        coords_truth=coords,
+        coords_recon=coords[perm],
+        n_clusters=2,
+        seed=0,
+    )
+
+    assert out["ari"] > 0.9
+    assert out["nmi"] > 0.9
+
+
 def test_domain_ari_nmi_too_few_cells():
     X = np.zeros((4, 3), dtype=np.float32)
     out = domain_ari_nmi(X, X, n_clusters=5, seed=0)
@@ -129,6 +156,13 @@ def test_celltype_proportion_swapped_proportions():
     r = ["A"] * 1 + ["B"] * 5
     s = celltype_proportion_spearman(t, r)
     assert s == pytest.approx(-1.0), f"perfectly inverted proportions should give -1, got {s}"
+
+
+def test_celltype_counts_handle_many_labels_vectorized():
+    t = [f"T{i}" for i in range(100) for _ in range(i + 1)]
+    r = list(reversed(t))
+    s = celltype_proportion_spearman(t, r)
+    assert s == pytest.approx(1.0)
 
 
 # -- Integration ----------------------------------------------------------
