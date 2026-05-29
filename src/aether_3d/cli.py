@@ -32,6 +32,12 @@ def reconstruct(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--dry-run", action="store_true", help="Validate arguments without reconstruction.")
     args = parser.parse_args(argv)
 
+    if args.num_depths < 2:
+        parser.error(
+            f"--num-depths must be >= 2 (depths define the interior virtual "
+            f"planes between slices); got {args.num_depths}"
+        )
+
     cfg = Aether3DConfig(
         thickness=args.thickness,
         max_epochs=args.epochs,
