@@ -1,0 +1,26 @@
+data_card_id: visium_hd_mouse_brain
+project: Aether3D
+dataset_name: Visium HD CytAssist Mouse Brain (H&E)
+platform: Visium HD (2 um continuous bins, typically analyzed at 8 um)
+issue_ref: '#67'
+source_url_or_accession: https://www.10xgenomics.com/datasets/visium-hd-cytassist-gene-expression-libraries-of-mouse-brain-he
+url_status: verified
+license_or_access_constraints: 10x Genomics Public Datasets License (free for research, attribution required). Prefer the binned_outputs.tar.gz bundle; avoid the unverified single .h5 hotlink.
+contact_or_citation: 10x Genomics Visium HD CytAssist Gene Expression Libraries of Mouse Brain (H&E).
+serial_slice_fit: single capture = one dense 2D section, no native z-axis; pair >=2 HD captures (assign increasing z_coord) for a stack, or use intra-section virtual-slice holdout. Serial replacement tracked in issue #72.
+contract_spatial: obsm['spatial'] (bin centers)
+contract_z_coord: 0.0 for the first capture; fixed physical spacing per additional capture
+contract_cell_class: leiden/cluster (no native label shipped)
+contract_X: raw bin counts
+raw_count_policy: raw integer counts only — no normalized-only, WSI, FASTQ, or BAM artifacts.
+raw_data_location: data/raw/visium_hd_mouse_brain/
+processed_data_location: data/processed/visium_hd_mouse_brain/
+anndata_schema_name: aether_3d_serial_slice
+fetch_mode: external
+preprocessing_command: python scripts/data/fetch_aether_datasets.py --dataset visium_hd_mouse_brain --dry-run
+split_strategy: virtual_slice_holdout_by_physical_z
+split_seed: 20260529
+created_at_utc: '2026-05-29T00:00:00Z'
+file_size_bytes_or_manifest: 4-7 GB (binned_outputs.tar.gz)
+content_hash_or_manifest_hash: pending_download_manifest_hash
+derived_figures_or_metrics: [A-F2, A-F4]
