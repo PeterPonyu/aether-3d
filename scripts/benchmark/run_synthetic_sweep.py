@@ -41,6 +41,7 @@ sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
 from scripts.data_flow.generate_serial_slices import generate_synthetic_serial_slices
 
+from aether_3d.benchmarks.metrics import gene_pearson_fidelity
 from aether_3d.config.aether_config import Aether3DConfig
 from aether_3d.core.aether_reconstructor import AetherReconstructor
 from aether_3d.data.trajectory_dataset import SerialSliceTrajectoryDataset
@@ -91,6 +92,12 @@ def count_params(modules: List[torch.nn.Module]) -> int:
 
 
 def evaluate_volume(virtual_slice: sc.AnnData, truth: sc.AnnData) -> Dict[str, float]:
+    # NOTE (issue #130): `gene_profile_pearson` is the correlation of the two
+    # slices' BULK (per-gene mean) expression profiles — a bulk metric that is
+    # invariant to where cells are placed, so it must NOT be read as a headline
+    # quality score on its own. It is reported alongside the spatially-matched
+    # per-cell / per-gene Pearson + RMSE (the metrics that actually reflect
+    # cell-level reconstruction) via metrics.gene_pearson_fidelity.
     pred_mean = np.mean(virtual_slice.X, axis=0)
     true_mean = np.mean(truth.X, axis=0)
     gene_p, _ = pearsonr(pred_mean, true_mean)
@@ -113,11 +120,24 @@ def evaluate_volume(virtual_slice: sc.AnnData, truth: sc.AnnData) -> Dict[str, f
             cell_p.append(v)
     cell_pearson = float(np.mean(cell_p)) if cell_p else 0.0
 
+    fidelity = gene_pearson_fidelity(
+        X_recon=np.asarray(pred_expr, dtype=np.float32),
+        coords_recon=np.asarray(pred_coords, dtype=np.float32),
+        X_truth=np.asarray(truth.X, dtype=np.float32),
+        coords_truth=np.asarray(true_coords, dtype=np.float32),
+    )
+
     return {
+        # Bulk slice-mean profile correlation — insensitive to spatial layout.
         "gene_profile_pearson": float(gene_p),
+        "bulk_slice_mean_pearson": fidelity["bulk_slice_mean_pearson"],
         "gene_profile_mse": gene_mse,
+        # Spatially-matched, cell-level metrics (the meaningful ones).
         "cell_level_mean_pearson": cell_pearson,
+        "per_cell_gene_pearson": fidelity["per_cell_gene_pearson"],
+        "per_gene_pearson": fidelity["per_gene_pearson"],
         "cell_level_mean_mse": cell_mse,
+        "per_cell_gene_rmse": fidelity["per_cell_gene_rmse"],
     }
 
 
