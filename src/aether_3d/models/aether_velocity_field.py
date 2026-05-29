@@ -259,19 +259,26 @@ class MultiModalVelocityField(nn.Module):
         zt_1d = zt_tensor.view(-1)
         delta_z_1d = delta_z_tensor.view(-1)
         
-        # Convert class conditioning to one-hot if integer indices are passed
+        # Convert class conditioning to one-hot if integer indices are passed.
+        # Issue #131: validate the index range and soft one-hot width; silent
+        # zero-padding / truncation hides mislabelled cells.
         if ct_tensor.dim() == 1 or (ct_tensor.dim() == 2 and ct_tensor.shape[1] == 1):
             ct_indices = ct_tensor.view(-1).long()
+            min_idx = int(ct_indices.min().item())
+            max_idx = int(ct_indices.max().item())
+            if min_idx < 0 or max_idx >= self.num_classes:
+                raise ValueError(
+                    "MultiModalVelocityField: class indices out of range "
+                    f"[0, {self.num_classes}); got [{min_idx}, {max_idx}]"
+                )
             ct_onehot = torch.zeros(xt_tensor.shape[0], self.num_classes, device=xt_tensor.device)
-            valid_mask = ct_indices < self.num_classes
-            if valid_mask.any():
-                ct_onehot[valid_mask, ct_indices[valid_mask]] = 1.0
+            ct_onehot[torch.arange(xt_tensor.shape[0], device=xt_tensor.device), ct_indices] = 1.0
             ct_tensor = ct_onehot
         elif ct_tensor.shape[1] != self.num_classes:
-            if ct_tensor.shape[1] < self.num_classes:
-                ct_tensor = torch.nn.functional.pad(ct_tensor, (0, self.num_classes - ct_tensor.shape[1]))
-            else:
-                ct_tensor = ct_tensor[:, :self.num_classes]
+            raise ValueError(
+                "MultiModalVelocityField: soft class conditioning has width "
+                f"{ct_tensor.shape[1]}, expected num_classes={self.num_classes}"
+            )
 
         cond = self.t_embedder(t_1d) + \
                self.z_embedder(zt_1d) + self.z_embedder(delta_z_1d) + \
