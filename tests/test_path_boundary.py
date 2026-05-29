@@ -14,7 +14,7 @@ from __future__ import annotations
 import pytest
 import torch
 
-from aether_3d.flow.path import get_path
+from aether_3d.flow.path import _safe_floor, get_path
 
 
 PATH_NAMES = ["linear", "gvp", "vp"]
@@ -54,4 +54,34 @@ def test_velocity_score_boundary_finite(path_name: str, t_val: float) -> None:
     assert torch.isfinite(noise).all(), (
         f"velocity_to_noise returned non-finite at t={t_val} on {path_name}: "
         f"{noise}"
+    )
+
+
+def test_gvp_t1_sign_correct() -> None:
+    """GVP conversion factor ``ratio = a / da`` must stay POSITIVE at t=1.
+
+    Follow-up to issue #135 (PR #157): the analytic GVP derivative
+    ``da = (pi/2) cos(t pi/2)`` is ``>= 0`` for every ``t in [0, 1]`` and reaches
+    ``0`` from ABOVE at ``t=1`` (``da > 0`` for all ``t < 1``), so the conversion
+    factor ``ratio = a / da = (2/pi) tan(t pi/2)`` is strictly positive on
+    ``[0, 1)`` and diverges to ``+inf`` as ``t -> 1-``.
+
+    In float32, ``t * pi/2`` rounds just ABOVE the true ``pi/2`` at ``t=1``, so
+    ``cos(...)`` evaluates to a tiny NEGATIVE value (~-7e-8). Before the fix the
+    sign-preserving ``_safe_floor`` floored that to ``-EPS`` and flipped
+    ``ratio`` to ``-1e6`` — wrong-signed, yet finite, so
+    ``test_velocity_score_boundary_finite`` did not catch it. This pins the
+    SIGN against the analytic limit, not just finiteness.
+    """
+    path = get_path("gvp")
+    t1 = torch.ones(4)
+
+    a, da = path.alpha(t1)
+    # Analytic limit: da -> 0 from above; it is never negative on [0, 1].
+    assert (da >= 0).all(), f"GVP da at t=1 must be >= 0 (analytic 0+), got {da}"
+
+    ratio = a / _safe_floor(da)
+    # ratio -> +inf as t -> 1-, so the floored boundary value must be positive.
+    assert (ratio > 0).all(), (
+        f"GVP conversion ratio a/da at t=1 must be > 0 (analytic +inf), got {ratio}"
     )

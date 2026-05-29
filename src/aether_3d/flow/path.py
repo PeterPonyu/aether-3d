@@ -191,7 +191,16 @@ class GVPPath(InterpolationPath):
 
     def alpha(self, t: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         a = torch.sin(t * math.pi / 2)
-        da = (math.pi / 2) * torch.cos(t * math.pi / 2)
+        # da = (pi/2) cos(t pi/2) is analytically >= 0 on t in [0, 1], reaching
+        # exactly 0 at t=1. In float32, ``t * pi/2`` rounds slightly ABOVE the
+        # true pi/2, so ``cos(...)`` evaluates to a tiny NEGATIVE value (~-7e-8)
+        # at t=1. Left unchecked, the sign-preserving ``_safe_floor`` in
+        # velocity_to_{score,noise} then floors ``da`` to ``-EPS`` and flips the
+        # sign of ``ratio = a / da`` (which must be +inf as t->1-, i.e. positive)
+        # — the finiteness test (#135) passes but the value is wrong-signed.
+        # Clamp to the analytic lower bound 0 so the boundary sign comes from the
+        # analytic limit, not float noise (review follow-up to #135 / PR #157).
+        da = torch.clamp((math.pi / 2) * torch.cos(t * math.pi / 2), min=0.0)
         return a, da
 
     def sigma(self, t: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
