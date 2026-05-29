@@ -547,15 +547,23 @@ def test_reconstruct_continuous_volume_uses_config_seed_per_call():
     assert np.allclose(np.asarray(vol_a.X), np.asarray(vol_b.X))
 
 
-def test_uot_pytorch_warns_and_stays_finite_on_underflow_risk():
+def test_uot_pytorch_stays_finite_on_underflow_risk_without_warning():
+    # Formerly asserted the #23 fp64-promotion "underflow risk" warning; the
+    # log-domain solver (#134) handles this regime silently, so we now assert
+    # the coupling stays finite and no underflow warning is emitted.
+    import warnings
+
     cost = torch.tensor([[100.0, 0.0], [50.0, 200.0]], dtype=torch.float32)
     generator = torch.Generator().manual_seed(123)
 
-    with pytest.warns(RuntimeWarning, match="underflow risk"):
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
         src, tgt, weights = compute_uot_coupling(
             cost, reg=0.8, tau=0.05, n_samples=16, torch_generator=generator
         )
 
+    messages = " ".join(str(w.message).lower() for w in caught)
+    assert "underflow" not in messages, f"unexpected underflow warning: {messages!r}"
     assert len(src) == len(tgt) == len(weights) == 16
     assert torch.isfinite(weights).all()
     assert torch.all(weights >= 0)
@@ -866,3 +874,64 @@ def test_pyproject_declares_scikit_learn_and_pot_runtime_deps():
         "the contradictory 'pot # optional later' comment must be removed "
         "(issue #119): pot is a required runtime dependency."
     )
+
+
+# ---------------------------------------------------------------------------
+# Issue #134 — log-domain stabilized unbalanced Sinkhorn UOT
+# ---------------------------------------------------------------------------
+
+
+def test_uot_plan_matches_pot_in_benign_regime():
+    """The log-domain PyTorch solver reproduces POT's normalized plan to
+    float32 tolerance in a benign regime (parity claim is now executable)."""
+    ot = pytest.importorskip("ot")
+    from aether_3d.coupling.uot import compute_uot_plan_pytorch
+
+    rng = np.random.default_rng(0)
+    cost = rng.random((30, 25))
+    reg, tau = 0.8, 0.05
+    a, b = np.ones(30) / 30, np.ones(25) / 25
+
+    p_pot = ot.sinkhorn_unbalanced(a, b, cost, reg, tau)
+    p_pot = p_pot / p_pot.sum()
+
+    p_torch = compute_uot_plan_pytorch(
+        torch.as_tensor(cost, dtype=torch.float32), reg=reg, tau=tau
+    ).numpy()
+
+    assert np.isfinite(p_torch).all()
+    assert np.isclose(p_torch.sum(), 1.0, atol=1e-5)
+    assert np.max(np.abs(p_pot - p_torch)) < 1e-6
+
+
+def test_uot_logdomain_stays_finite_where_expdomain_collapses():
+    """A large-cost / small-reg regime underflows the exp-domain kernel to a
+    zero-sum (collapsed) plan, but the log-domain solver returns a finite,
+    non-degenerate coupling whose mass tracks the structured optimum."""
+    from aether_3d.coupling.uot import compute_uot_plan_pytorch
+
+    n = 20
+    # Banded cost (prefers the diagonal) + a large constant offset that mimics
+    # the lambda_class penalty added on top of a normalized cost.
+    struct = np.abs(np.subtract.outer(np.arange(n), np.arange(n))).astype(np.float32)
+    cost_np = 100.0 + struct
+    cost = torch.as_tensor(cost_np, dtype=torch.float32)
+    reg, tau = 0.05, 0.05
+
+    # Replicate the OLD exp-domain kernel in float32: it underflows to all-zero.
+    a_t = torch.ones(n, dtype=torch.float32) / n
+    b_t = torch.ones(n, dtype=torch.float32) / n
+    K = torch.exp(-cost / reg) * (a_t.unsqueeze(1) * b_t.unsqueeze(0))
+    assert float(K.sum()) == 0.0, "expected exp-domain kernel to underflow here"
+
+    # Log-domain solver: finite, normalized, and non-degenerate (not uniform).
+    p = compute_uot_plan_pytorch(cost, reg=reg, tau=tau)
+    assert torch.isfinite(p).all()
+    assert np.isclose(float(p.sum()), 1.0, atol=1e-5)
+
+    # Mass concentrates on the diagonal: each row's argmax tracks its index,
+    # which a collapsed/uniform plan could not achieve.
+    row_argmax = p.argmax(dim=1)
+    assert torch.equal(row_argmax, torch.arange(n))
+    uniform = 1.0 / (n * n)
+    assert float(p.max()) > 5 * uniform
