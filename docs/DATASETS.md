@@ -199,3 +199,60 @@ Ingestion of these datasets is tracked as granular per-dataset GitHub issues
 produce `z_coord`-tagged AnnData sections matching `aether_3d_serial_slice`, add
 a `data/cards/*.yaml` card, register in `scripts/data/fetch_aether_datasets.py`,
 ship a no-network smoke test, and add a row to this guide.
+
+---
+
+## Consolidated dataset registry (draft PR #70)
+
+Every `[data]` issue for Aether3D is consolidated into draft PR #70 at
+**framework + registry + data-card** depth (not full runnable loaders, not
+docs-only). Each dataset has a machine-readable card under `data/cards/*.yaml`
+and is dispatched by the unified CLI `scripts/data/fetch_aether_datasets.py`
+(`--list`, `--dataset <id> --dry-run`, `--fetch`). All entries map onto the
+`aether_3d_serial_slice` contract (`obsm['spatial']` / `obs['z_coord']` /
+`obs['cell_class']` / raw-count `X`).
+
+| Issue | data_card_id | Platform | URL status | fetch_mode |
+|---|---|---|:--:|---|
+
+**fetch_mode semantics** — `python_native`: squidpy/scanpy one-liner loader
+(wired, opt-in via `--fetch`); `external`: verified URL but multi-GB, prints the
+canonical URL and never auto-downloads; `manifest_script`: delegates to
+`scripts/data/prepare_brca_imc_kuett_2022.py --manifest-only`; `unverified`: the
+source URL is a guess — the CLI raises `NotImplementedError` pointing at the
+tracking issue and never fabricates a download URL.
+
+> Per project data policy every ingested stack yields a Python list of
+> `z_coord`-ordered AnnData sections (`SerialSliceTrajectoryDataset` requires
+> ≥2 slices) with **raw integer count matrices + spatial metadata only** — no
+> WSIs, FASTQs, BAMs, or normalized-only objects.
+
+### Literature / source citations
+
+No `LITERATURE_LINKS.md` exists in this repo, so the source-paper citations for
+each consolidated dataset are recorded here:
+
+### Ingestion roadmap
+
+Sequenced toward production loaders (each closes its `[data]` issue):
+
+1. **Zero-glue Python-native first** — `merfish_hypothalamus_moffitt_2018` (#76)
+   and `visium_breast_cancer_serial` (#77): squidpy/scanpy loaders are wired;
+   add real download + `z_coord` split + contract tests, then close #76/#77.
+2. **Verified-external serial stacks** — `visium_mouse_brain_serial_sections`
+   (#72), `mosta_mouse_embryo_serial` (#73/#78/#179),
+   `allen_merfish_whole_mouse_brain_serial` (#71), `gse223561_liver_regeneration_serial`
+   (#69), `visium_hd_mouse_brain` (#67), `visium_hd_tonsil` (#68): staged manual
+   download from the verified URLs, then loader + contract tests.
+3. **Resolve UNVERIFIED URLs before ingestion** — `merfish_mouse_brain_receptor_map`
+   (#66), `starmap_plus_mouse_cns_3d` (#74), `stereoseq_whole_mouse_brain_serial`
+   (#75): confirm the canonical raw-count bundle (the CLI guards these with
+   `NotImplementedError`); never invent a URL.
+4. **Advanced / blocked** — `brca_imc_kuett_2022` (#79): run
+   `scripts/data/prepare_brca_imc_kuett_2022.py --manifest-only`, then a
+   `steinbock` pipeline to produce schema-valid AnnData before wiring the loader.
+5. **Hygiene** — `.omc/`, `data/raw/`, and `data/processed/` are gitignored;
+   `data/cards/` stays tracked (#174).
+
+PR #70 stays a **draft** until at least the Tier-1 python-native loaders ship
+runnable `z_coord`-tagged AnnData with passing contract tests.
