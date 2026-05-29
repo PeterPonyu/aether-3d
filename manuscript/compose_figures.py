@@ -78,7 +78,7 @@ def _stamp_provenance(fig, source_path: Path, data_card_id: str | None) -> None:
     )
 
 
-# -- Figure 1: virtual-slice holdout 7-metric quartet --------------------
+# -- Figure 1: virtual-slice holdout per-slice metric panel --------------
 
 
 def compose_holdout(holdout: dict, out_path: Path, source_path: Path, data_card_id: str | None = None) -> None:
@@ -99,8 +99,9 @@ def compose_holdout(holdout: dict, out_path: Path, source_path: Path, data_card_
     method_names = sorted(methods.keys())
 
     # Round 10 W004a — 2 rows × 4 cols: 7 metric bars (a-g) plus a
-    # direction-corrected 7-metric radar (h) so a reader can see the
-    # whole quartet at-a-glance per adapter.
+    # direction-corrected radar (h) over those seven metrics. Note this
+    # shows seven of the eight reported per-slice metrics; cell-type
+    # proportion Spearman is recorded in the JSON but not plotted here.
     n_rows = 2
     n_cols = 4
     fig = plt.figure(figsize=(14, 7.0), constrained_layout=True)
@@ -208,7 +209,7 @@ def compose_holdout(holdout: dict, out_path: Path, source_path: Path, data_card_
     _bold_panel_label(ax_h, "h")
 
     fig.suptitle(
-        "Virtual-slice holdout — 7-metric quartet (synthetic 5-slice stack, middle slice held out)",
+        "Virtual-slice holdout — seven of eight per-slice metrics (synthetic 5-slice stack, middle slice held out)",
         fontsize=11,
     )
     _stamp_provenance(fig, source_path, data_card_id)

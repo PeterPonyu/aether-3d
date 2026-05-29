@@ -48,17 +48,20 @@
 \begin{abstract}
 Serial-section tissue imaging produces discrete 2D slices whose
 inter-section geometry must be reconstructed to enable continuous
-volumetric analysis. We introduce \textbf{\textsc{Aether3D}}, an audit-safe
-benchmark contract that wraps six 3D-reconstruction adapters
-(nearest-slice and linear-interpolation baselines together with four
-external competitors evaluated via shared input/output schemas) under a
-single virtual-slice holdout protocol. Per virtual depth we report a
-seven-metric quartet (Chamfer distance, coordinate RMSE, sliced 2D
-Wasserstein, Moran's I agreement, domain ARI/NMI, cell-type proportion
-Spearman) augmented by topology and vector-field metrics (Betti-0
-stability, flow-divergence, velocity anisotropy). An $(\alpha_{\text{spatial}}
+volumetric analysis. We introduce \textbf{\textsc{Aether3D}}, a
+benchmark contract that wraps six 3D-reconstruction adapters under a
+single virtual-slice holdout protocol: two always-available baselines
+(nearest-slice and linear-interpolation) and four external competitors
+that are wired through a shared input/output schema and run only when
+their upstream packages are installed. Per virtual depth we report an
+eight-metric suite: Chamfer distance, coordinate RMSE, sliced 2D
+Wasserstein, Moran's I agreement, domain ARI, domain NMI, cell-type
+proportion Spearman, and Betti-0 topology stability. Flow-divergence and
+velocity-anisotropy vector-field diagnostics ship in the same module but
+are computed only when a velocity field is available, not for the NumPy
+baselines reported here. An $(\alpha_{\text{spatial}}
 \times \lambda_{\text{class}})$ ablation grid quantifies the contribution of each
-component of the hybrid coupling cost, and a hardware-honest scaling
+component of the hybrid coupling cost, and a scaling
 harness records per-measurement device, CUDA version, runtime, and peak
 GPU memory. \emph{All results in this draft are computed from synthetic
 placeholder data; real-data promotion is gated by the project claim
@@ -95,12 +98,14 @@ which remains cited rather than integrated in this scaffold~\cite{Varrone2024Cel
 The data plumbing
 follows standard single-cell tooling~\cite{Wolf2018Scanpy}.
 
-\textsc{Aether3D} contributes three independent levers: (i)~a uniform
-volume-adapter contract that makes head-to-head comparison audit-safe;
-(ii)~a 7-metric per-virtual-slice quartet (Section~\ref{sec:metrics})
-that exposes geometry, molecular, and topology fidelity in one pass;
+\textsc{Aether3D} contributes three components: (i)~a uniform
+volume-adapter contract that lets methods be compared on identical
+inputs under the held-out audit boundary;
+(ii)~an eight-metric per-virtual-slice suite (Section~\ref{sec:metrics})
+that reports geometry, molecular, and topology fidelity in one pass;
 (iii)~an explicit $\lambda_{\text{class}}$ knob with a reproducible ablation
-grid that justifies prior hard-coded defaults.
+grid that examines the shipped $\alpha_{\text{spatial}} = 0.5$,
+$\lambda_{\text{class}} = 10$ defaults.
 
 Per the project audit boundary, no prose, class name, or figure layout
 from any prior 3D reconstruction work is reused; the leakage scanner
@@ -147,17 +152,23 @@ new methods plug in without changing the runner.
 \label{sec:uot}
 
 The cell-to-cell coupling cost between adjacent slices combines spatial
-distance, gene cosine distance, and a same-cell-type prior:
+distance, gene cosine distance, and a same-cell-type penalty. Let
+$\hat{D}^{\text{spat}}$ and $\hat{D}^{\text{gene}}$ be the spatial
+(Euclidean) and gene (cosine) distance matrices, each max-normalized to
+$[0, 1]$, and let $P^{\text{cell}}_{ij} = \mathrm{clip}(1 - \langle
+\mathbf{c}_i, \mathbf{c}_j \rangle, 0, 1)$ be the one-hot cell-type
+mismatch between cells $i$ and $j$:
 \[
-  C_{ij} = \alpha_{\text{spatial}} \, D^{\text{spat}}_{ij}
-         + (1 - \alpha_{\text{spatial}}) \, D^{\text{gene}}_{ij}
+  C_{ij} = \alpha_{\text{spatial}} \, \hat{D}^{\text{spat}}_{ij}
+         + (1 - \alpha_{\text{spatial}}) \, \hat{D}^{\text{gene}}_{ij}
          + \lambda_{\text{class}} \, P^{\text{cell}}_{ij}.
 \]
 Both $\alpha_{\text{spatial}} \in [0, 1]$ and $\lambda_{\text{class}} \in
-[0, \infty)$ are explicit configuration parameters (no hard-coded
-defaults shipped). The $(\alpha, \lambda)$ ablation grid in
+[0, \infty)$ are exposed as configuration parameters; the shipped
+defaults are $\alpha_{\text{spatial}} = 0.5$ and $\lambda_{\text{class}} =
+10$. The $(\alpha, \lambda)$ ablation grid in
 Section~\ref{sec:res-ablation} quantifies the contribution of each
-component.
+component and justifies those defaults.
 
 \subsection{Training and inference protocol}
 \label{sec:training-protocol}
@@ -165,7 +176,7 @@ component.
 The continuous-3D adapters expose a deterministic \texttt{fit / sample}
 contract: \texttt{fit} consumes the visible slices plus their physical-$z$
 labels and returns an adapter object; \texttt{sample(z)} returns the
-reconstructed AnnData at any in-range depth. The hardware-honest
+reconstructed AnnData at any in-range depth. The
 scaling harness (\texttt{aether\_3d.benchmarks.scaling}) records device,
 torch version, CUDA version, hostname, peak GPU memory, runtime, and
 git SHA per measurement, so a reviewer can re-run any single scaling
@@ -175,16 +186,16 @@ distance-band enrichment and z-axis depth-binned density profiles
 around any query cell type, supporting the in-silico sectioning and
 co-localization analyses described in Section~\ref{sec:results}.
 
-\subsection{Metric quartet + topology}
+\subsection{Metric suite}
 \label{sec:metrics}
 
 For each held-out virtual depth $z_t$ the reconstructed cells are
-compared against the truth slice at that depth on seven metrics:
+compared against the truth slice at that depth on eight metrics:
 Chamfer distance and coordinate RMSE (geometry), sliced 2D Wasserstein
 (distributional geometry), Moran's I agreement on top-$K$ HVGs
-(molecular continuity), domain ARI/NMI via KMeans on the latent
-(cluster identity), cell-type proportion Spearman (identity composition),
-and Betti-0 stability via kNN union-find (topology).
+(molecular continuity), domain ARI and domain NMI via KMeans on the
+latent (cluster identity), cell-type proportion Spearman (identity
+composition), and Betti-0 stability via kNN union-find (topology).
 
 \section{Results}
 \label{sec:results}
@@ -192,27 +203,27 @@ and Betti-0 stability via kNN union-find (topology).
 \subsection{Overview of \textsc{Aether3D}}
 \label{sec:res-overview}
 
-\textsc{Aether3D} is delivered as three independently-testable surfaces.
+\textsc{Aether3D} has three independently-testable components.
 \emph{(i)}~A uniform volume-adapter contract (Section~\ref{sec:contract})
-runs six 3D-reconstruction methods on identical serial-section input with
+runs the 3D-reconstruction methods on identical serial-section input with
 held-out virtual slices removed before any adapter sees the data.
-\emph{(ii)}~A seven-metric per-virtual-slice quartet
+\emph{(ii)}~An eight-metric per-virtual-slice suite
 (Section~\ref{sec:metrics}) reports geometry, distributional geometry,
 molecular continuity, cluster identity, and topology fidelity in a single
-pass. \emph{(iii)}~A hardware-honest scaling harness records device,
+pass. \emph{(iii)}~A scaling harness records device,
 torch version, CUDA version, peak memory, and runtime per measurement.
-Each surface is exercised by the synthetic benchmarks below; real-data
+The synthetic benchmarks below exercise each of these; real-data
 graduation remains gated by the project claim ledger.
 
 \subsection{Virtual-slice holdout (synthetic placeholder)}
 \label{sec:res-holdout}
 
-Figure~\ref{fig:holdout} reports the geometry quartet for two
-always-available baselines (nearest-slice, linear-interp) on a synthetic
-5-slice stack with the middle slice held out. Nearest-slice attains
-lower Chamfer distance and lower sliced 2D Wasserstein than linear
-interpolation at this noise level, a result that is interpretable rather
-than headline-worthy: with $\sigma_{\text{spatial}} = 1.0$ the nearest
+Figure~\ref{fig:holdout} reports the per-virtual-slice metrics for the
+two always-available baselines (nearest-slice, linear-interp) on a
+synthetic 5-slice stack with the middle slice held out. Nearest-slice
+attains lower Chamfer distance and lower sliced 2D Wasserstein than
+linear interpolation at this noise level, which has a simple
+explanation: with $\sigma_{\text{spatial}} = 1.0$ the nearest
 neighbor is closer to the truth than the linear blend of two flanking
 slices. \emph{Numbers in this figure are synthetic placeholders; real-data
 figures will replace them once a serial-section dataset graduates.}
@@ -220,10 +231,12 @@ figures will replace them once a serial-section dataset graduates.}
 \begin{figure}[t]
   \centering
   \includegraphics[width=\textwidth]{figures/fig_holdout_quartet.pdf}
-  \caption{Virtual-slice holdout: seven-metric quartet for the two
+  \caption{Virtual-slice holdout metrics for the two
   always-available baselines on a synthetic 5-slice stack with the
-  middle slice held out. Adapter color is stable across all three
-  figures (\texttt{aether-3d/manuscript/compose\_palette.py}).
+  middle slice held out. Panels \textbf{a}--\textbf{g} show seven of the
+  eight per-slice metrics; cell-type proportion Spearman is recorded in
+  the source JSON but not plotted here. Adapter color is stable across
+  all three figures (\texttt{aether-3d/manuscript/compose\_palette.py}).
   \textbf{a}, Chamfer distance ($\downarrow$).
   \textbf{b}, coordinate RMSE ($\downarrow$).
   \textbf{c}, sliced 2D Wasserstein ($\downarrow$).
@@ -231,10 +244,11 @@ figures will replace them once a serial-section dataset graduates.}
   \textbf{e}, domain ARI ($\uparrow$).
   \textbf{f}, domain NMI ($\uparrow$).
   \textbf{g}, Betti-0 stability via kNN union-find ($\uparrow$).
-  \textbf{h}, direction-corrected seven-metric radar; lower-is-better
+  \textbf{h}, direction-corrected radar over the seven plotted metrics;
+  lower-is-better
   metrics are mapped via $1/(1{+}x)$ and every axis is min-max normalized
   across adapters so the outer envelope = best. One polygon per adapter
-  exposes overall reconstruction quality at-a-glance.
+  summarizes overall reconstruction quality.
   Source: \texttt{aether-3d/results/benchmark/synthetic\_holdout.json}.}
   \label{fig:holdout}
 \end{figure}
@@ -269,7 +283,7 @@ prose without overstating biology.
   \label{fig:ablation}
 \end{figure}
 
-\subsection{Hardware-honest scaling}
+\subsection{Scaling}
 \label{sec:res-scaling}
 
 The scaling harness records device, torch version, CUDA version, peak
@@ -283,7 +297,7 @@ through the contract will produce nonzero memory under the
 \begin{figure}[t]
   \centering
   \includegraphics[width=\textwidth]{figures/fig_scaling_curve.pdf}
-  \caption{Hardware-honest scaling on synthetic stacks.
+  \caption{Scaling on synthetic stacks.
   \textbf{a}, runtime (s, $\downarrow$ at fixed quality) vs cells per
   slice on log-log axes, grouped by adapter.
   \textbf{b}, per-measurement reproducibility provenance (device, torch,
@@ -301,9 +315,10 @@ audit boundary requires that every promotion of a claim from
 \texttt{validated-small} or \texttt{blocked} to \texttt{paper-ready} be
 backed by real-data evidence linked from \texttt{docs/CLAIM\_LEDGER.md}.
 The deliverables present today are: (i)~a uniform volume-adapter
-contract that catches audit regressions mechanically; (ii)~the 7-metric
-per-virtual-slice quartet plus topology; (iii)~an interpretable UOT-cost
-component ablation; (iv)~a hardware-honest scaling harness that fails
+contract that catches audit regressions mechanically; (ii)~the
+eight-metric per-virtual-slice suite (geometry, molecular, and
+topology); (iii)~an interpretable UOT-cost
+component ablation; (iv)~a scaling harness that fails
 fast when the running torch cannot launch kernels on the visible GPU.
 
 \subsection{Limitations}
