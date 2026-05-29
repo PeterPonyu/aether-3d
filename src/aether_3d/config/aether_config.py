@@ -61,6 +61,13 @@ class Aether3DConfig(BaseModel):
     thickness: float = 10.0
     n_samples_volume: int = 200_000
 
+    # Optional 2nd–98th z-percentile outlier pruning of the assembled volume.
+    # Off by default: virtual z-planes are deterministic (z = d * thickness),
+    # so there are no genuine z "outliers" — enabling this can silently drop
+    # legitimate sparse endpoint planes (issue #81). When enabled, the number
+    # and z-values of dropped cells are logged via a warning.
+    prune_z_outliers: bool = False
+
     # Output
     output_dir: Path = Field(default=Path("results"))
 
