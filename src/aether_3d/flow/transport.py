@@ -97,6 +97,15 @@ class FlowTransport:
         if self.loss_weight == LossWeighting.VELOCITY:
             # Weight by the magnitude of the velocity (common trick)
             loss = loss * mean_flat(ut**2).detach()
+        elif self.loss_weight == LossWeighting.LIKELIHOOD:
+            # Per-sample weight = sigma(t)^2, the standard score-matching
+            # ELBO weighting that ties the regression objective to a data
+            # log-likelihood bound. See Song et al. 2021, "Score-Based
+            # Generative Modeling through SDEs". For LinearPath this is
+            # (1 - t)^2; for GVP / VP paths it follows the path's sigma.
+            # Issue #137 (was a silent no-op falling through to NONE).
+            sigma_t, _ = self.path.sigma(t)
+            loss = loss * (sigma_t ** 2).detach()
 
         return {"loss": loss.mean(), "t": t, "per_sample": loss}
 
@@ -149,9 +158,16 @@ class FlowSampler:
         rtol: float = 1e-5,
         cfg_scale: float = 1.0,
         model_kwargs: Optional[Dict[str, Any]] = None,
+        cfg_uncond_kwargs: Optional[Dict[str, Any]] = None,
         t_forward: Optional[float] = None,
     ) -> torch.Tensor:
-        """Integrate the probability-flow ODE from noise to data."""
+        """Integrate the probability-flow ODE from noise to data.
+
+        Classifier-free guidance: when ``cfg_scale != 1.0``, the caller must
+        also supply ``cfg_uncond_kwargs`` describing the unconditional pass
+        (e.g. a null/zero class condition).  The integrated drift is
+        ``v = (1 + cfg_scale) * v_cond - cfg_scale * v_uncond``.  See #141.
+        """
         model = model or self.model
         assert model is not None, "No model provided to sampler"
 
@@ -167,13 +183,24 @@ class FlowSampler:
             # For simplicity we just scale here; real usage will do proper forward diffusion
             x = x * (t_forward ** 0.5)
 
-        drift = self.transport.get_drift(model, **(model_kwargs or {}))
+        cond_drift = self.transport.get_drift(model, **(model_kwargs or {}))
 
-        # Very simple wrapper – real CFG doubling happens in the model wrapper
-        if cfg_scale != 1.0:
-            # The caller (Lumina / Aether module) is responsible for the
-            # double-batch CFG trick. We just integrate whatever drift it gives us.
-            pass
+        if cfg_scale == 1.0:
+            drift: Callable[[torch.Tensor, torch.Tensor], torch.Tensor] = cond_drift
+        else:
+            if cfg_uncond_kwargs is None:
+                raise ValueError(
+                    "cfg_scale != 1.0 requires cfg_uncond_kwargs to define "
+                    "the unconditional pass (e.g. null/zero class condition)."
+                )
+            uncond_drift = self.transport.get_drift(model, **cfg_uncond_kwargs)
+
+            def guided_drift(x_t: torch.Tensor, t_t: torch.Tensor) -> torch.Tensor:
+                v_cond = cond_drift(x_t, t_t)
+                v_uncond = uncond_drift(x_t, t_t)
+                return (1.0 + cfg_scale) * v_cond - cfg_scale * v_uncond
+
+            drift = guided_drift
 
         integrator = ode(
             drift,

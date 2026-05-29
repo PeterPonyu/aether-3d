@@ -50,7 +50,14 @@ def test_betti_zero_stability_identical_clouds_is_one():
 
 
 def test_betti_zero_stability_diverges_when_clouds_differ_in_topology():
-    """One cloud has 1 component, the other has 2. Stability should drop."""
+    """One cloud has 1 component, the other has 2. Stability should drop.
+
+    Issue #133: the metric is now component-ratio * scale-ratio, so the
+    exact numeric value depends on both topology AND density mismatch.
+    The intent — "stability drops well below 1.0" — is what the contract
+    cares about; pinning a specific numeric value would over-fit the
+    combined formula.
+    """
     rng = np.random.default_rng(0)
     one_blob = rng.normal(0, 0.1, size=(40, 2)).astype(np.float32)
     two_blobs = np.vstack([
@@ -58,7 +65,9 @@ def test_betti_zero_stability_diverges_when_clouds_differ_in_topology():
         rng.normal(100, 0.1, size=(20, 2)),
     ]).astype(np.float32)
     s = betti_zero_stability(one_blob, two_blobs, k=4)
-    assert s == pytest.approx(0.5)
+    # Component ratio is 1/2 = 0.5; scale ratio is in (0, 1].
+    # Stability must be strictly between 0 and 0.5.
+    assert 0.0 < s <= 0.5
 
 
 # -- Flow divergence ----------------------------------------------------

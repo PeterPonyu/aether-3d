@@ -225,7 +225,16 @@ class MultiModalVelocityField(nn.Module):
 
             # Positional arguments: gt is passed as t, and t is passed as y
             t_tensor = cast(torch.Tensor, gt)
-            ct_tensor = cast(torch.Tensor, t)  # the labels/class conditioning
+            # Issue #117: prefer the running class state state["c"] for
+            # conditioning when present, so the class-velocity ODE channel is
+            # closed-loop (velocity depends on the current class state, not
+            # only on the source label). Fall back to the positional y when
+            # state["c"] is absent so existing positional callers still work.
+            state_c = state.get("c")
+            if state_c is not None:
+                ct_tensor = state_c
+            else:
+                ct_tensor = cast(torch.Tensor, t)  # the labels/class conditioning
 
             # Default/Fallback Z coordinates if missing from dict state
             zt_tensor = state.get("z", torch.zeros(xt_tensor.shape[0], 1, device=xt_tensor.device))
