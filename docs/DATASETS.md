@@ -215,6 +215,7 @@ and is dispatched by the unified CLI `scripts/data/fetch_aether_datasets.py`
 | Issue | data_card_id | Platform | URL status | fetch_mode |
 |---|---|---|:--:|---|
 | #66 | `merfish_mouse_brain_receptor_map` | MERFISH (single-cell) | ⚠️ UNVERIFIED | `unverified` |
+| #67 | `visium_hd_mouse_brain` | Visium HD (2 µm bins) | ✅ verified | `external` |
 
 **fetch_mode semantics** — `python_native`: squidpy/scanpy one-liner loader
 (wired, opt-in via `--fetch`); `external`: verified URL but multi-GB, prints the
@@ -235,6 +236,8 @@ each consolidated dataset are recorded here:
 
 - **#66 MERFISH Mouse Brain Receptor Map** — Vizgen showcase dataset,
   `info.vizgen.com/mouse-brain-data` (⚠️ direct hotlink unverified).
+- **#67 / #68 Visium HD Mouse Brain / Tonsil** — 10x Genomics Visium HD CytAssist
+  public datasets (10x Genomics Public Datasets License).
 
 ### Ingestion roadmap
 
