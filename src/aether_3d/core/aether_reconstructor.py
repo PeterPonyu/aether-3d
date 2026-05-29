@@ -8,6 +8,7 @@ It mirrors the role of LuminaImputer but for serial slice → continuous 3D volu
 from __future__ import annotations
 
 import random
+import warnings
 from typing import Any, Callable, List
 
 import anndata as ad
@@ -125,6 +126,14 @@ class AetherReconstructor:
         if self.model is None:
             raise RuntimeError(
                 "Call setup_data first. Training/fit is recommended but not strictly required for demo."
+            )
+
+        if num_depths < 2:
+            raise ValueError(
+                f"num_depths must be >= 2 (depths define the interior virtual "
+                f"planes between slices via linspace(0, 1, num_depths)); got "
+                f"{num_depths}. num_depths=0 yields an empty volume and "
+                f"num_depths=1 a degenerate single-plane volume."
             )
 
         thickness = thickness or self.cfg.thickness
@@ -329,11 +338,28 @@ class AetherReconstructor:
         # Concatenate everything
         volume = sc.concat(all_cells, axis=0, join="outer")
 
-        # Very light density pruning (remove extreme outliers in Z for demo)
-        z = volume.obs["z_3d"].values
-        z_min, z_max = np.percentile(z, [2, 98])
-        keep = (z >= z_min) & (z <= z_max)
-        volume = volume[keep].copy()
+        # Optional 2nd–98th z-percentile outlier pruning (opt-in via config).
+        # Virtual z-planes are deterministic (z = d * thickness), so there are
+        # no genuine z "outliers"; an unconditional percentile clip silently
+        # deletes whichever planes carry the fewest cells — typically the
+        # sparse endpoint slices — and that may be exactly the held-out plane
+        # the caller wants to score (issue #81). Off by default; when enabled,
+        # report how many cells and which z-planes were removed.
+        if self.cfg.prune_z_outliers:
+            z = volume.obs["z_3d"].values
+            z_min, z_max = np.percentile(z, [2, 98])
+            keep = (z >= z_min) & (z <= z_max)
+            n_dropped = int((~keep).sum())
+            if n_dropped:
+                dropped_z = sorted(set(np.round(z[~keep].astype(float), 6).tolist()))
+                warnings.warn(
+                    f"prune_z_outliers dropped {n_dropped} virtual cells outside "
+                    f"the 2nd–98th z-percentile [{z_min:.4g}, {z_max:.4g}]; "
+                    f"removed z-planes: {dropped_z}",
+                    RuntimeWarning,
+                    stacklevel=2,
+                )
+            volume = volume[keep].copy()
 
         print(
             f"  Reconstructed volume has {volume.n_obs} virtual cells across {len(adata_list) - 1} intervals."
