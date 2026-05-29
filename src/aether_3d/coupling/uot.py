@@ -168,7 +168,15 @@ def compute_uot_coupling(
     P = ot.sinkhorn_unbalanced(a, b, cost, reg, tau)
 
     flat_P = P.ravel()
-    flat_P = flat_P / flat_P.sum()
+    # Mirror the torch branch (see compute_uot_coupling_pytorch): when the
+    # unbalanced Sinkhorn coupling collapses to all-zero mass (extreme costs
+    # / very small reg), fall back to a uniform distribution rather than
+    # propagating NaN into rng.choice.  See issue #84.
+    flat_P_sum = flat_P.sum()
+    if flat_P_sum > 0:
+        flat_P = flat_P / flat_P_sum
+    else:
+        flat_P = np.full_like(flat_P, 1.0 / flat_P.size)
     idx = rng.choice(n0 * n1, size=n_samples, p=flat_P)
 
     src = idx // n1
