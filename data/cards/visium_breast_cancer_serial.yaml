@@ -1,0 +1,26 @@
+data_card_id: visium_breast_cancer_serial
+project: Aether3D
+dataset_name: Visium human breast cancer serial sections (Block A Section 1 & 2)
+platform: 10x Visium v1 (spot-based)
+issue_ref: '#77'
+source_url_or_accession: scanpy.datasets.visium_sge('V1_Breast_Cancer_Block_A_Section_1' | 'V1_Breast_Cancer_Block_A_Section_2')
+url_status: verified
+license_or_access_constraints: 10x Genomics Public Datasets License (free for research, attribution required).
+contact_or_citation: 10x Genomics public datasets — Human Breast Cancer (Block A, Section 1 & 2), Visium Spatial Gene Expression.
+serial_slice_fit: zero-glue DL-training-ready raw-count serial pair — 2 serial sections of the same tissue block, ~3,798 x 36,601 each, raw UMI in X.
+contract_spatial: obsm['spatial'] (spot coordinates)
+contract_z_coord: 0.0 for Section 1; fixed physical section spacing (e.g. 10.0 um) for Section 2
+contract_cell_class: leiden clustering output (sc.tl.leiden) — no label shipped natively
+contract_X: raw UMI counts (directly usable for DL training)
+raw_count_policy: raw integer counts only — no normalized-only, WSI, FASTQ, or BAM artifacts.
+raw_data_location: data/raw/visium_breast_cancer_serial/
+processed_data_location: data/processed/visium_breast_cancer_serial/
+anndata_schema_name: aether_3d_serial_slice
+fetch_mode: python_native
+preprocessing_command: python scripts/data/fetch_aether_datasets.py --dataset visium_breast_cancer_serial --dry-run
+split_strategy: virtual_slice_holdout_by_physical_z
+split_seed: 20260529
+created_at_utc: '2026-05-29T00:00:00Z'
+file_size_bytes_or_manifest: ~3798 x 36601 per section x 2 sections
+content_hash_or_manifest_hash: pending_download_manifest_hash
+derived_figures_or_metrics: [A-F2, A-F4]

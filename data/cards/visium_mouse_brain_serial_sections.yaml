@@ -1,0 +1,26 @@
+data_card_id: visium_mouse_brain_serial_sections
+project: Aether3D
+dataset_name: 10x Visium Mouse Brain Serial Sections (Sagittal Anterior + Posterior)
+platform: 10x Visium v1 (Fresh Frozen, whole transcriptome), 10 um sections
+issue_ref: '#72'
+source_url_or_accession: https://www.10xgenomics.com/datasets/mouse-brain-serial-section-1-sagittal-anterior-1-standard-1-0-0
+url_status: verified
+license_or_access_constraints: 10x Genomics Public Datasets License, CC BY 4.0 (free for research, attribution required).
+contact_or_citation: 10x Genomics public datasets — Mouse Brain Serial Section 1 & 2 (Sagittal Anterior + Posterior), Space Ranger 1.0.0.
+serial_slice_fit: 4 serial sections (Sagittal Anterior S1/S2 + Posterior S1/S2) of the same brain with real z separation — genuinely multi-section; replaces the single-capture serial gap of issues #67/#68.
+contract_spatial: obsm['spatial'] (spot centers)
+contract_z_coord: serial-section index x physical 10 um spacing (Anterior S1=0, S2=1, ...; Posterior offset)
+contract_cell_class: leiden/cluster (no native label shipped)
+contract_X: raw spot UMI counts (filtered_feature_bc_matrix.h5)
+raw_count_policy: raw integer counts only — no normalized-only, WSI, FASTQ, or BAM artifacts.
+raw_data_location: data/raw/visium_mouse_brain_serial_sections/
+processed_data_location: data/processed/visium_mouse_brain_serial_sections/
+anndata_schema_name: aether_3d_serial_slice
+fetch_mode: external
+preprocessing_command: python scripts/data/fetch_aether_datasets.py --dataset visium_mouse_brain_serial_sections --dry-run
+split_strategy: virtual_slice_holdout_by_physical_z
+split_seed: 20260529
+created_at_utc: '2026-05-29T00:00:00Z'
+file_size_bytes_or_manifest: few-hundred MB per section x 4 sections
+content_hash_or_manifest_hash: pending_download_manifest_hash
+derived_figures_or_metrics: [A-F2, A-F4]

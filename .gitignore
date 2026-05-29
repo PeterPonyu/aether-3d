@@ -29,6 +29,10 @@ results/*
 !results/holdout_validation_metrics.json
 *.log
 
+# OMC runtime state (created when tooling is invoked with this repo as cwd)
+.omc/
+
 # Local real-data caches; keep data/cards tracked.
 data/raw/
 data/processed/
+!data/cards/
