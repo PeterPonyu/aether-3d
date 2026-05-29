@@ -657,3 +657,41 @@ def test_pyproject_pins_pytorch_lightning_and_pytest_pythonpath():
     assert pytest_block.get("testpaths") == ["tests"], (
         f"pytest ini_options.testpaths drifted (issue #20); got {pytest_block}"
     )
+
+
+def test_pyproject_declares_scikit_learn_and_pot_runtime_deps():
+    """Regression (issue #119): scikit-learn is a hard, top-level import in
+    aether_3d.data.trajectory_dataset (sklearn.preprocessing.LabelEncoder), so
+    it must be a *declared* runtime dependency rather than relying on scanpy's
+    transitive edge. Also assert pot is declared as a runtime dep with no
+    'optional later' contradiction, so the packaging intent matches the code."""
+    import sys
+    from pathlib import Path
+
+    if sys.version_info >= (3, 11):
+        import tomllib  # type: ignore[attr-defined]
+    else:  # pragma: no cover - python 3.10 path
+        import tomli as tomllib  # type: ignore[no-redef]
+
+    repo_root = Path(__file__).resolve().parents[1]
+    raw = (repo_root / "pyproject.toml").read_text()
+    with (repo_root / "pyproject.toml").open("rb") as fh:
+        cfg = tomllib.load(fh)
+
+    runtime = cfg["project"]["dependencies"]
+
+    def _declared(name: str) -> bool:
+        norm = name.replace("_", "-")
+        return any(spec.replace("_", "-").startswith(norm) for spec in runtime)
+
+    assert _declared("scikit-learn"), (
+        "scikit-learn must be a declared runtime dependency (issue #119); "
+        f"it is a hard top-level import in trajectory_dataset. Got {runtime}"
+    )
+    assert _declared("pot"), (
+        f"pot must remain a declared runtime dependency (issue #119); got {runtime}"
+    )
+    assert "# optional later" not in raw, (
+        "the contradictory 'pot # optional later' comment must be removed "
+        "(issue #119): pot is a required runtime dependency."
+    )
