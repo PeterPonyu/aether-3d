@@ -222,6 +222,7 @@ and is dispatched by the unified CLI `scripts/data/fetch_aether_datasets.py`
 | #72 | `visium_mouse_brain_serial_sections` | Visium v1 | ✅ verified | `external` |
 | #73 / #78 / #179 | `mosta_mouse_embryo_serial` | Stereo-seq | ✅ verified | `external` |
 | #74 | `starmap_plus_mouse_cns_3d` | STARmap PLUS (3D in-situ) | ⚠️ UNVERIFIED | `unverified` |
+| #75 | `stereoseq_whole_mouse_brain_serial` | Stereo-seq | ⚠️ UNVERIFIED | `unverified` |
 
 **fetch_mode semantics** — `python_native`: squidpy/scanpy one-liner loader
 (wired, opt-in via `--fetch`); `external`: verified URL but multi-GB, prints the
@@ -257,6 +258,11 @@ each consolidated dataset are recorded here:
 - **#74 STARmap PLUS mouse CNS 3D** — Shi, He, Zhou et al. 2023, *Spatial atlas
   of the mouse central nervous system at molecular resolution*, Nature
   (PMC10709140); SODB / Zenodo `records/8092024` (⚠️ exact hotlink unverified).
+- **#75 Stereo-seq whole mouse brain serial** — Zhang et al. 2025,
+  *Single-cell spatial transcriptomic atlas of the whole mouse brain*, Neuron
+  (S0896-6273(25)00133-3); preprint bioRxiv 2023.12.03.569501; raw CNGB
+  CNP0003837, processed BSDC DOI `10.12412/BSDC.1699433096.20001`
+  (⚠️ raw integer count-matrix bundle unverified).
 
 ### Ingestion roadmap
 
