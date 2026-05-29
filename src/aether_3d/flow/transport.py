@@ -57,6 +57,28 @@ class FlowTransport:
     sample_eps: float = 0.0
 
     # ------------------------------------------------------------------
+    # Time sampling (single source of truth)
+    # ------------------------------------------------------------------
+    def sample_time(
+        self,
+        batch: int,
+        device: torch.device | str,
+        *,
+        generator: Optional[torch.Generator] = None,
+    ) -> torch.Tensor:
+        """Sample training-time ``t`` uniformly on ``[train_eps, 1]``.
+
+        This is the single shared sampler that BOTH ``training_losses`` and the
+        Lightning training modules (e.g. ``AetherFlowModule``) route through, so
+        the two paths can never silently disagree on range. ``train_eps`` is
+        honoured here (it was previously bypassed by the module's hardcoded
+        ``[0.01, 0.99]`` range). Default ``train_eps=0`` reproduces uniform
+        ``[0, 1]`` sampling.
+        """
+        t = torch.rand(batch, device=device, generator=generator)
+        return t * (1.0 - self.train_eps) + self.train_eps
+
+    # ------------------------------------------------------------------
     # Training losses
     # ------------------------------------------------------------------
     def training_losses(
@@ -76,7 +98,7 @@ class FlowTransport:
 
         # Sample noise and time
         x0 = torch.randn_like(x1)
-        t = torch.rand(batch, device=device) * (1 - self.train_eps) + self.train_eps
+        t = self.sample_time(batch, device)
 
         # Interpolate
         _, xt, ut = self.path.plan(t, x0, x1)
