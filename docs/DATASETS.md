@@ -219,6 +219,7 @@ and is dispatched by the unified CLI `scripts/data/fetch_aether_datasets.py`
 | #68 | `visium_hd_tonsil` | Visium HD (2 µm bins) | ✅ verified | `external` |
 | #69 | `gse223561_liver_regeneration_serial` | Visium v1 | ✅ verified | `external` |
 | #71 | `allen_merfish_whole_mouse_brain_serial` | MERFISH (single-cell) | ✅ verified | `external` |
+| #72 | `visium_mouse_brain_serial_sections` | Visium v1 | ✅ verified | `external` |
 
 **fetch_mode semantics** — `python_native`: squidpy/scanpy one-liner loader
 (wired, opt-in via `--fetch`); `external`: verified URL but multi-GB, prints the
@@ -246,6 +247,8 @@ each consolidated dataset are recorded here:
 - **#71 Allen/Zhuang MERFISH whole mouse brain** — Zhang et al. 2023,
   *Molecularly defined and spatially resolved cell atlas of the whole mouse
   brain*, Nature (s41586-023-06808-9); Allen Brain Cell Atlas (`Zhuang-ABCA-1..4`).
+- **#72 10x Visium Mouse Brain Serial Sections** — 10x Genomics public datasets,
+  Space Ranger 1.0.0 (CC BY 4.0).
 
 ### Ingestion roadmap
 
