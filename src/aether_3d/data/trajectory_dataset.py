@@ -40,6 +40,12 @@ class SerialSliceTrajectoryDataset(Dataset[Dict[str, torch.Tensor]]):
         self.cfg = config
         self.rng = np.random.default_rng(config.seed)
 
+        # Validate the required AnnData schema up front so a near-correct
+        # input fails with one clear, actionable error naming the missing key
+        # and slice index — rather than an opaque KeyError surfaced lazily
+        # inside __getitem__ during training (issue #86).
+        self._validate_inputs()
+
         # Global label encoder
         all_labels = []
         for ad in adata_list:
@@ -51,6 +57,30 @@ class SerialSliceTrajectoryDataset(Dataset[Dict[str, torch.Tensor]]):
             self.label_encoder.fit(all_labels)
 
         self._build_trajectories()
+
+    def _validate_inputs(self) -> None:
+        """Check every slice carries the required obs/obsm schema.
+
+        Raises a single ``ValueError`` naming the missing key and the offending
+        slice index so a CLI user with a near-correct ``.h5ad`` gets an
+        actionable error at construction instead of a bare ``KeyError`` raised
+        lazily inside ``__getitem__`` after training has started (issue #86).
+        """
+        spatial_key = self.cfg.spatial_key
+        z_key = self.cfg.z_key
+        label_key = self.cfg.label_key
+        for i, adata in enumerate(self.adata_list):
+            if spatial_key not in adata.obsm:
+                raise ValueError(
+                    f"slice {i}: required obsm[{spatial_key!r}] (spatial_key) "
+                    f"is missing; have obsm keys {sorted(adata.obsm.keys())}."
+                )
+            for key, name in ((z_key, "z_key"), (label_key, "label_key")):
+                if key not in adata.obs:
+                    raise ValueError(
+                        f"slice {i}: required obs[{key!r}] ({name}) is missing; "
+                        f"have obs columns {sorted(adata.obs.columns)}."
+                    )
 
     def _build_trajectories(self) -> None:
         if len(self.adata_list) < 2:

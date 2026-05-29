@@ -668,6 +668,215 @@ def test_pyproject_pins_pytorch_lightning_and_pytest_pythonpath():
 
 
 # ---------------------------------------------------------------------------
+# Issue #140 — unified, shared training-time sampler
+# ---------------------------------------------------------------------------
+
+
+def test_sample_time_is_deterministic_and_respects_train_eps():
+    """The shared sampler is reproducible for a fixed seed and honours
+    train_eps (which the module's old hardcoded [0.01, 0.99] range bypassed)."""
+    transport = create_flow_transport(
+        path="linear", prediction="score", train_eps=0.1
+    )
+    g1 = torch.Generator().manual_seed(0)
+    g2 = torch.Generator().manual_seed(0)
+    t1 = transport.sample_time(64, torch.device("cpu"), generator=g1)
+    t2 = transport.sample_time(64, torch.device("cpu"), generator=g2)
+
+    assert torch.equal(t1, t2)
+    assert torch.all(t1 >= 0.1) and torch.all(t1 <= 1.0)
+
+
+def test_module_and_transport_share_one_time_sampler():
+    """Both training paths (FlowTransport.training_losses and
+    AetherFlowModule.training_step) route time sampling through the *same*
+    transport.sample_time, so for a fixed seed they draw identical t and the
+    historical range inconsistency ([0.01,0.99] vs [train_eps,1]) is gone."""
+    from aether_3d.modules.aether_flow_module import AetherFlowModule
+
+    class TimeCaptureModel(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.dummy = torch.nn.Parameter(torch.zeros(()))
+            self.seen_t = None
+
+        def forward(self, state, t, class_condition):
+            self.seen_t = t.detach().clone()
+            return {
+                "vx": torch.zeros_like(state["x"]) + self.dummy,
+                "vg": torch.zeros_like(state["g"]) + self.dummy,
+                "vc": torch.zeros_like(state["c"]) + self.dummy,
+            }
+
+    cfg = Aether3DConfig(hidden_size=8, depth=1, num_heads=2, patch_size=4)
+    model = TimeCaptureModel()
+    module = AetherFlowModule(cfg, model)  # type: ignore[arg-type]
+    n = 5
+    batch = {
+        "x0": torch.zeros(n, 2), "g0": torch.zeros(n, 4),
+        "c0": torch.eye(2)[torch.zeros(n, dtype=torch.long)],
+        "x1": torch.ones(n, 2), "g1": torch.ones(n, 4),
+        "c1": torch.eye(2)[torch.ones(n, dtype=torch.long)],
+        "z0": torch.zeros(n, 1), "z1": torch.ones(n, 1),
+        "delta_z": torch.ones(n, 1),
+    }
+
+    # The first stochastic op in training_step is the time sample, so seeding
+    # the global RNG then replaying transport.sample_time must reproduce it.
+    torch.manual_seed(123)
+    module.training_step(batch, 0)
+    t_module = model.seen_t
+
+    torch.manual_seed(123)
+    t_replay = module.transport.sample_time(n, torch.device("cpu"))
+    assert torch.equal(t_module, t_replay)
+
+    # And FlowTransport.training_losses uses the same sampler: training_losses
+    # draws x0 = randn_like(x1) first, then t = sample_time(...).
+    class VelModel(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.dummy = torch.nn.Parameter(torch.zeros(()))
+
+        def forward(self, xt, t, **kwargs):
+            return torch.zeros_like(xt) + self.dummy
+
+    transport = module.transport
+    x1 = torch.randn(n, 3)
+    torch.manual_seed(7)
+    out = transport.training_losses(VelModel(), x1)
+    torch.manual_seed(7)
+    _ = torch.randn_like(x1)
+    t_expected = transport.sample_time(n, x1.device)
+    assert torch.equal(out["t"], t_expected)
+
+
+# ---------------------------------------------------------------------------
+# Issue #88 — POT <-> PyTorch UOT "mathematical parity" (claimed, now tested)
+# ---------------------------------------------------------------------------
+
+
+def _reference_uot_plan(cost_np, reg, tau, max_iter=1000, tol=1e-6):
+    """Normalized unbalanced-Sinkhorn plan computed with the documented solver
+    math (the recursion compute_uot_coupling_pytorch implements), in float64.
+
+    This is a fixed reference for the parity claim; it does not call into POT
+    (no vendoring of POT internals) and is compared against the installed
+    ``ot.sinkhorn_unbalanced`` API below.
+    """
+    cost = torch.as_tensor(cost_np, dtype=torch.float64)
+    n0, n1 = cost.shape
+    a_t = torch.ones(n0, dtype=torch.float64) / n0
+    b_t = torch.ones(n1, dtype=torch.float64) / n1
+    K = torch.exp(-cost / reg) * (a_t.unsqueeze(1) * b_t.unsqueeze(0))
+    u = torch.ones(n0, dtype=torch.float64)
+    v = torch.ones(n1, dtype=torch.float64)
+    fi = tau / (tau + reg)
+    for _ in range(max_iter):
+        up, vp = u.clone(), v.clone()
+        u = (a_t / torch.clamp(K @ v, min=1e-12)) ** fi
+        v = (b_t / torch.clamp(K.T @ u, min=1e-12)) ** fi
+        eu = torch.max(torch.abs(u - up)) / torch.clamp(
+            torch.maximum(torch.max(torch.abs(u)), torch.max(torch.abs(up))), min=1.0
+        )
+        ev = torch.max(torch.abs(v - vp)) / torch.clamp(
+            torch.maximum(torch.max(torch.abs(v)), torch.max(torch.abs(vp))), min=1.0
+        )
+        if 0.5 * (eu + ev) < tol:
+            break
+    P = u.unsqueeze(1) * K * v.unsqueeze(0)
+    return (P / P.sum()).numpy()
+
+
+def test_uot_pytorch_matches_pot_numerically():
+    """Pin the docstring claim that compute_uot_coupling_pytorch has
+    'mathematical parity with POT's sinkhorn_unbalanced': the normalized
+    transport plans agree to numerical tolerance on a fixed cost matrix."""
+    ot = pytest.importorskip("ot")
+
+    rng = np.random.default_rng(0)
+    cost = rng.random((30, 25))
+    reg, tau = 0.8, 0.05
+    a, b = np.ones(30) / 30, np.ones(25) / 25
+
+    p_pot = ot.sinkhorn_unbalanced(a, b, cost, reg, tau)
+    p_pot = p_pot / p_pot.sum()
+    p_torch = _reference_uot_plan(cost, reg, tau)
+
+    max_abs = float(np.max(np.abs(p_pot - p_torch)))
+    frob_rel = float(np.linalg.norm(p_pot - p_torch) / np.linalg.norm(p_pot))
+    assert max_abs < 1e-9, f"max|P_pot - P_torch| = {max_abs} exceeds 1e-9"
+    assert frob_rel < 1e-9, f"Frobenius rel error = {frob_rel} exceeds 1e-9"
+
+
+def test_uot_pytorch_sampler_reflects_pot_plan_end_to_end():
+    """The actual public sampler (compute_uot_coupling_pytorch) draws pairs
+    whose empirical distribution matches POT's normalized plan — parity of the
+    code path users call, not just the replicated math."""
+    ot = pytest.importorskip("ot")
+
+    rng = np.random.default_rng(0)
+    cost = rng.random((30, 25))
+    reg, tau = 0.8, 0.05
+    a, b = np.ones(30) / 30, np.ones(25) / 25
+
+    p_pot = ot.sinkhorn_unbalanced(a, b, cost, reg, tau)
+    p_pot = p_pot / p_pot.sum()
+
+    src, tgt, _ = compute_uot_coupling(
+        torch.as_tensor(cost, dtype=torch.float32),
+        reg=reg, tau=tau, n_samples=200_000,
+        torch_generator=torch.Generator().manual_seed(0),
+    )
+    emp = np.zeros((30, 25))
+    np.add.at(emp, (src.numpy(), tgt.numpy()), 1.0)
+    emp = emp / emp.sum()
+
+    corr = float(np.corrcoef(emp.ravel(), p_pot.ravel())[0, 1])
+    max_abs = float(np.max(np.abs(emp - p_pot)))
+    assert corr > 0.95, f"empirical/POT plan correlation {corr} too low"
+    assert max_abs < 5e-3, f"empirical vs POT max abs diff {max_abs} too large"
+
+
+def test_pyproject_declares_scikit_learn_and_pot_runtime_deps():
+    """Regression (issue #119): scikit-learn is a hard, top-level import in
+    aether_3d.data.trajectory_dataset (sklearn.preprocessing.LabelEncoder), so
+    it must be a *declared* runtime dependency rather than relying on scanpy's
+    transitive edge. Also assert pot is declared as a runtime dep with no
+    'optional later' contradiction, so the packaging intent matches the code."""
+    import sys
+    from pathlib import Path
+
+    if sys.version_info >= (3, 11):
+        import tomllib  # type: ignore[attr-defined]
+    else:  # pragma: no cover - python 3.10 path
+        import tomli as tomllib  # type: ignore[no-redef]
+
+    repo_root = Path(__file__).resolve().parents[1]
+    raw = (repo_root / "pyproject.toml").read_text()
+    with (repo_root / "pyproject.toml").open("rb") as fh:
+        cfg = tomllib.load(fh)
+
+    runtime = cfg["project"]["dependencies"]
+
+    def _declared(name: str) -> bool:
+        norm = name.replace("_", "-")
+        return any(spec.replace("_", "-").startswith(norm) for spec in runtime)
+
+    assert _declared("scikit-learn"), (
+        "scikit-learn must be a declared runtime dependency (issue #119); "
+        f"it is a hard top-level import in trajectory_dataset. Got {runtime}"
+    )
+    assert _declared("pot"), (
+        f"pot must remain a declared runtime dependency (issue #119); got {runtime}"
+    )
+    assert "# optional later" not in raw, (
+        "the contradictory 'pot # optional later' comment must be removed "
+        "(issue #119): pot is a required runtime dependency."
+    )
+
+
+# ---------------------------------------------------------------------------
 # Issue #134 — log-domain stabilized unbalanced Sinkhorn UOT
 # ---------------------------------------------------------------------------
 

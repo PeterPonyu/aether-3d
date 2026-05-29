@@ -22,6 +22,13 @@ except ImportError:
     ot = None
 
 
+# Default RNG seed used when callers do not supply ``rng``/``torch_generator``
+# to ``compute_uot_coupling``/``compute_uot_coupling_pytorch``. Documented so
+# that the default sampling path is reproducible across calls. Override by
+# passing an explicit generator.
+_DEFAULT_UOT_RNG_SEED = 0
+
+
 def compute_hybrid_cost(
     x0: npt.NDArray[Any] | torch.Tensor,
     g0: npt.NDArray[Any] | torch.Tensor,
@@ -135,6 +142,11 @@ def compute_uot_coupling(
     """
     Unbalanced OT coupling using unbalanced Sinkhorn.
     Automatically routes to GPU solver if cost is a PyTorch tensor, otherwise uses POT on CPU.
+
+    Reproducibility: when ``rng`` is ``None``, this function falls back to a
+    deterministic ``np.random.default_rng(_DEFAULT_UOT_RNG_SEED)`` so that the
+    public default path produces the same coupling across calls. Pass an
+    explicit ``rng`` for application-controlled streams.
     """
     if isinstance(cost, torch.Tensor):
         return compute_uot_coupling_pytorch(
@@ -144,7 +156,8 @@ def compute_uot_coupling(
     n0, n1 = cost.shape
     if n0 == 0 or n1 == 0:
         raise ValueError(f"UOT coupling requires non-empty cost axes; got {cost.shape}")
-    rng = rng or np.random.default_rng()
+    if rng is None:
+        rng = np.random.default_rng(_DEFAULT_UOT_RNG_SEED)
 
     if not _HAS_POT:
         warnings.warn(
@@ -168,7 +181,15 @@ def compute_uot_coupling(
     P = ot.sinkhorn_unbalanced(a, b, cost, reg, tau)
 
     flat_P = P.ravel()
-    flat_P = flat_P / flat_P.sum()
+    # Mirror the torch branch (see compute_uot_coupling_pytorch): when the
+    # unbalanced Sinkhorn coupling collapses to all-zero mass (extreme costs
+    # / very small reg), fall back to a uniform distribution rather than
+    # propagating NaN into rng.choice.  See issue #84.
+    flat_P_sum = flat_P.sum()
+    if flat_P_sum > 0:
+        flat_P = flat_P / flat_P_sum
+    else:
+        flat_P = np.full_like(flat_P, 1.0 / flat_P.size)
     idx = rng.choice(n0 * n1, size=n_samples, p=flat_P)
 
     src = idx // n1
@@ -277,8 +298,19 @@ def compute_uot_coupling_pytorch(
     Solves the log-domain stabilized unbalanced Sinkhorn (mathematical parity
     with POT's sinkhorn_unbalanced) and samples ``n_samples`` cell pairs from
     the resulting normalized transport plan.
+
+    Reproducibility: when ``generator`` is ``None``, this function falls back
+    to a deterministic ``torch.Generator`` seeded from
+    ``_DEFAULT_UOT_RNG_SEED`` so that the default sampling path is
+    reproducible. Pass an explicit ``generator`` for application-controlled
+    streams.
     """
     n1 = cost.shape[1]
+    device = cost.device
+    if generator is None:
+        generator = torch.Generator(device=device).manual_seed(_DEFAULT_UOT_RNG_SEED)
+    # Log-domain stabilized solve (issue #134) returns the normalized plan and
+    # validates non-empty cost axes; supersedes the issue #23 float64 band-aid.
     flat_P = compute_uot_plan_pytorch(cost, reg, tau, max_iter, tol).view(-1)
 
     idx = torch.multinomial(

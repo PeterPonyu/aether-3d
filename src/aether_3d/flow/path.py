@@ -42,6 +42,27 @@ PathName = Literal["linear", "gvp", "vp"]
 # same value so the fix shape is identical across forks.
 EPS_ALPHA = 1e-6
 
+# Boundary epsilon for the velocity<->score / velocity<->noise conversions.
+# At t in {0, 1} the conversion denominators (``var``) and the ``ratio = a/da``
+# factor collapse to 0 or blow up, depending on the path family. Shared with
+# the lumina-st PR for #122 (cross-repo velocity-score cluster); both repos
+# must use the same constant and clamp shape so the fix is identical.
+EPS_BOUNDARY = 1e-6
+
+
+def _safe_floor(x: torch.Tensor, eps: float = EPS_BOUNDARY) -> torch.Tensor:
+    """Sign-preserving floor: returns ``x`` with ``|x| >= eps`` everywhere.
+
+    Preserves the sign of ``x``; uses +eps when ``x`` is exactly 0. Avoids
+    the sign-flip that ``torch.clamp(x, min=eps)`` would inflict on values
+    that are negative by construction (e.g. ``var`` in ``velocity_to_noise``).
+    """
+    return torch.where(
+        x.abs() > eps,
+        x,
+        torch.where(x >= 0, torch.full_like(x, eps), torch.full_like(x, -eps)),
+    )
+
 
 class InterpolationPath(ABC):
     """Abstract base class for a probability path p_t(x) = N(mu_t, sigma_t^2)."""
@@ -126,18 +147,25 @@ class InterpolationPath(ABC):
         a, da = self.alpha(t)
         s, ds = self.sigma(t)
         mean = x
-        ratio = a / da
+        # Issue #135: clamp the boundary denominators so the conversion is
+        # finite at t in {0, 1}. ``da`` can hit 0 (GVP/VP) and ``var`` can
+        # collapse to 0 (Linear at t=1, VP at t=1). Sign-preserving floor.
+        ratio = a / _safe_floor(da)
         var = s**2 - ratio * ds * s
-        return (ratio * velocity - mean) / var
+        return (ratio * velocity - mean) / _safe_floor(var)
 
     def velocity_to_noise(self, velocity: torch.Tensor, x: torch.Tensor, t: torch.Tensor) -> torch.Tensor:
         t = expand_time_like_data(t, x)
         a, da = self.alpha(t)
         s, ds = self.sigma(t)
         mean = x
-        ratio = a / da
+        # Issue #135: same boundary clamp shape as velocity_to_score.
+        # ``var`` is negative by construction on these paths (Linear: -1;
+        # GVP/VP: negative everywhere), so a sign-preserving floor is
+        # required — torch.clamp(min=eps) would silently flip the sign.
+        ratio = a / _safe_floor(da)
         var = ratio * ds - s
-        return (ratio * velocity - mean) / var
+        return (ratio * velocity - mean) / _safe_floor(var)
 
 
 # ----------------------------------------------------------------------
@@ -163,7 +191,16 @@ class GVPPath(InterpolationPath):
 
     def alpha(self, t: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         a = torch.sin(t * math.pi / 2)
-        da = (math.pi / 2) * torch.cos(t * math.pi / 2)
+        # da = (pi/2) cos(t pi/2) is analytically >= 0 on t in [0, 1], reaching
+        # exactly 0 at t=1. In float32, ``t * pi/2`` rounds slightly ABOVE the
+        # true pi/2, so ``cos(...)`` evaluates to a tiny NEGATIVE value (~-7e-8)
+        # at t=1. Left unchecked, the sign-preserving ``_safe_floor`` in
+        # velocity_to_{score,noise} then floors ``da`` to ``-EPS`` and flips the
+        # sign of ``ratio = a / da`` (which must be +inf as t->1-, i.e. positive)
+        # — the finiteness test (#135) passes but the value is wrong-signed.
+        # Clamp to the analytic lower bound 0 so the boundary sign comes from the
+        # analytic limit, not float noise (review follow-up to #135 / PR #157).
+        da = torch.clamp((math.pi / 2) * torch.cos(t * math.pi / 2), min=0.0)
         return a, da
 
     def sigma(self, t: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
