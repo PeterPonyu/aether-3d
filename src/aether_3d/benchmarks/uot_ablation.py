@@ -149,10 +149,19 @@ def run_uot_ablation(
             lambda_class=point.lambda_class,
         )
 
-        # Solve UOT on the resulting cost matrix
-        np.random.seed(point.seed)
+        # Solve UOT on the resulting cost matrix.  ``compute_uot_coupling``
+        # constructs its own ``np.random.default_rng()`` when ``rng`` is None,
+        # and that does NOT read the legacy ``np.random.seed`` state — so the
+        # previous ``np.random.seed(point.seed)`` call left the ablation
+        # nondeterministic across runs.  Pass an explicit, point-seeded
+        # Generator instead.  See issue #118.
+        ablation_rng = np.random.default_rng(point.seed)
         src, tgt, weights = compute_uot_coupling(
-            cost, reg=uot_reg, tau=uot_tau, n_samples=uot_samples,
+            cost,
+            reg=uot_reg,
+            tau=uot_tau,
+            n_samples=uot_samples,
+            rng=ablation_rng,
         )
 
         # Reconstruct soft P from sampled pairs
