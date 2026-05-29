@@ -3,21 +3,20 @@
 Deep verification script for Aether3D (mirrors LuminaST's verify script).
 
 - Generates synthetic serial 2D slices with spatial + gene + cell class
-- Builds UOT trajectory dataset
-- Instantiates MultiModalVelocityField + AetherFlowModule
-- Skips training in the bounded smoke path; pytest covers the training-batch path
+- Builds UOT trajectory dataset via AetherReconstructor.setup_data
+- Runs a bounded training pass (Trainer(fast_dev_run=1)) so the smoke
+  actually exercises train -> reconstruct rather than reconstructing with
+  a zero-init untrained model (issue #124)
 - Calls reconstruct_continuous_volume and exits nonzero if required output checks fail
 """
 
 import argparse
 from pathlib import Path
 import numpy as np
+import pytorch_lightning as pl
 import scanpy as sc
 import pandas as pd
 from aether_3d.config.aether_config import Aether3DConfig
-from aether_3d.data.trajectory_dataset import SerialSliceTrajectoryDataset
-from aether_3d.models.aether_velocity_field import MultiModalVelocityField
-from aether_3d.modules.aether_flow_module import AetherFlowModule
 from aether_3d.core.aether_reconstructor import AetherReconstructor
 
 
@@ -104,33 +103,32 @@ def main():
         n_samples_volume=48,
     )
 
-    dataset = SerialSliceTrajectoryDataset(adatas, cfg)
-    print(f"Trajectory dataset size: {len(dataset)} pairs")
-
-    # Build model
-    sample = dataset[0]
-    model = MultiModalVelocityField(
-        spatial_dim=2,
-        gene_dim=sample["g0"].shape[0],
-        num_classes=4,
-        hidden_size=16,
-        depth=1,
-    )
-
-    _module = AetherFlowModule(cfg, model)
-
-    # Training skipped in this lightweight verification to avoid shape mismatches in demo model.
-    # The architecture (model + module + dataset) is already validated by pytest.
-    print(
-        "Skipping full training in lightweight verification (pytest covers the model)."
-    )
-
-    # Reconstruction
+    # Build dataset + dim-inferred model through the reconstructor so that
+    # spatial/gene/class dims always match the dataset (avoids the historical
+    # "shape mismatches in demo model" — fixed via dim inference in
+    # AetherReconstructor.setup_data; see issue #124).
     recon = AetherReconstructor(cfg)
     recon.setup_data(adatas)
-    # Attach the (untrained but instantiated) model for the reconstructor demo
-    recon.model = model
+    assert recon.dataset is not None
+    print(f"Trajectory dataset size: {len(recon.dataset)} pairs")
 
+    # Bounded training so the reconstruction below uses an actually-trained
+    # model. fast_dev_run=1 keeps the CI runtime minimal (single batch,
+    # CPU-only) while still exercising the full train -> reconstruct path
+    # the "Deep" E2E smoke promises (issue #124).
+    trainer = pl.Trainer(
+        fast_dev_run=1,
+        accelerator="cpu",
+        logger=False,
+        enable_checkpointing=False,
+        enable_model_summary=False,
+    )
+    recon.fit(trainer=trainer)
+    print(
+        f"Bounded training completed: global_step={trainer.global_step} (fast_dev_run=1)"
+    )
+
+    # Reconstruction (now using the trained model attached to `recon`)
     volume = recon.reconstruct_continuous_volume(adatas, thickness=10.0, num_depths=3)
 
     print("\nReconstructed 3D volume:")

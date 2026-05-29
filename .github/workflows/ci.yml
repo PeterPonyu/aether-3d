@@ -56,6 +56,11 @@ jobs:
       run: |
         pytest
 
-    - name: Run bounded synthetic E2E smoke
+    - name: Run bounded synthetic E2E smoke (train + reconstruct)
+      # The smoke script trains the model (fast_dev_run=1) before
+      # reconstruction so the "Deep" E2E actually exercises the full
+      # train -> reconstruct path (issue #124). Do not drop the training
+      # phase without also updating scripts/e2e/verify_aether_pipeline.py
+      # and tests/test_ci_contract.py::test_deep_e2e_includes_training.
       run: |
         python scripts/e2e/verify_aether_pipeline.py
