@@ -216,6 +216,7 @@ and is dispatched by the unified CLI `scripts/data/fetch_aether_datasets.py`
 |---|---|---|:--:|---|
 | #66 | `merfish_mouse_brain_receptor_map` | MERFISH (single-cell) | ⚠️ UNVERIFIED | `unverified` |
 | #67 | `visium_hd_mouse_brain` | Visium HD (2 µm bins) | ✅ verified | `external` |
+| #68 | `visium_hd_tonsil` | Visium HD (2 µm bins) | ✅ verified | `external` |
 
 **fetch_mode semantics** — `python_native`: squidpy/scanpy one-liner loader
 (wired, opt-in via `--fetch`); `external`: verified URL but multi-GB, prints the
