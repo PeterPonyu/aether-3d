@@ -221,6 +221,7 @@ and is dispatched by the unified CLI `scripts/data/fetch_aether_datasets.py`
 | #71 | `allen_merfish_whole_mouse_brain_serial` | MERFISH (single-cell) | ✅ verified | `external` |
 | #72 | `visium_mouse_brain_serial_sections` | Visium v1 | ✅ verified | `external` |
 | #73 / #78 / #179 | `mosta_mouse_embryo_serial` | Stereo-seq | ✅ verified | `external` |
+| #74 | `starmap_plus_mouse_cns_3d` | STARmap PLUS (3D in-situ) | ⚠️ UNVERIFIED | `unverified` |
 
 **fetch_mode semantics** — `python_native`: squidpy/scanpy one-liner loader
 (wired, opt-in via `--fetch`); `external`: verified URL but multi-GB, prints the
@@ -253,6 +254,9 @@ each consolidated dataset are recorded here:
 - **#73 / #78 / #179 MOSTA mouse embryo serial** — Chen et al. 2022,
   *Spatiotemporal transcriptomic atlas of mouse organogenesis*, Cell
   (S0092-8674(22)00399-3); CNGB CNP0001543 (CC BY 4.0).
+- **#74 STARmap PLUS mouse CNS 3D** — Shi, He, Zhou et al. 2023, *Spatial atlas
+  of the mouse central nervous system at molecular resolution*, Nature
+  (PMC10709140); SODB / Zenodo `records/8092024` (⚠️ exact hotlink unverified).
 
 ### Ingestion roadmap
 
