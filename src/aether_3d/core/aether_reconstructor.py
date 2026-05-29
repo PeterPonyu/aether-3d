@@ -128,6 +128,14 @@ class AetherReconstructor:
                 "Call setup_data first. Training/fit is recommended but not strictly required for demo."
             )
 
+        if num_depths < 2:
+            raise ValueError(
+                f"num_depths must be >= 2 (depths define the interior virtual "
+                f"planes between slices via linspace(0, 1, num_depths)); got "
+                f"{num_depths}. num_depths=0 yields an empty volume and "
+                f"num_depths=1 a degenerate single-plane volume."
+            )
+
         thickness = thickness or self.cfg.thickness
         n_samples = n_samples or self.cfg.n_samples_volume
 

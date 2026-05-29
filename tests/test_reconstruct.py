@@ -12,6 +12,7 @@ the train/inference invariant for any pair of slices whose ``z_coord`` differs
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 import anndata as ad
@@ -19,6 +20,7 @@ import numpy as np
 import pytest
 import torch
 
+from aether_3d.cli import reconstruct
 from aether_3d.config.aether_config import Aether3DConfig
 from aether_3d.core.aether_reconstructor import AetherReconstructor
 
@@ -170,6 +172,28 @@ def _prune_cfg(**overrides: Any) -> Aether3DConfig:
     return Aether3DConfig(**base)
 
 
+# ---------------------------------------------------------------------------
+# Issue #85 — num_depths unguarded: 0 crashes (opaque concat), 1 degenerate;
+# CLI --num-depths unvalidated. num_depths < 2 must be rejected with a clear
+# error at both the API and the CLI entry point.
+# ---------------------------------------------------------------------------
+
+
+def _small_cfg(**overrides: Any) -> Aether3DConfig:
+    base: dict[str, Any] = dict(
+        seed=42,
+        hidden_size=8,
+        depth=1,
+        num_heads=2,
+        patch_size=4,
+        n_samples_base=12,
+        n_samples_volume=12,
+        thickness=10.0,
+    )
+    base.update(overrides)
+    return Aether3DConfig(**base)
+
+
 def test_boundary_slices_not_silently_dropped() -> None:
     """By default (prune_z_outliers=False), the sparse endpoint z-planes must
     survive — on unfixed main the unconditional 2/98 clip deletes the z=0
@@ -201,3 +225,40 @@ def test_prune_z_outliers_opt_in_warns_about_dropped_cells() -> None:
             adatas, thickness=10.0, n_samples=200, num_depths=3
         )
     assert volume.n_obs > 0
+
+
+@pytest.mark.parametrize("bad_num_depths", [0, 1, -3])
+def test_num_depths_validated(bad_num_depths: int) -> None:
+    """API: num_depths < 2 must raise a clear ValueError naming num_depths,
+    not an opaque concat crash (0) or a silent degenerate volume (1)."""
+    adatas = _two_slice_adatas(z0=0.0, z1=2.0)
+    recon = AetherReconstructor(_small_cfg())
+    recon.setup_data(adatas)
+
+    with pytest.raises(ValueError, match="num_depths"):
+        recon.reconstruct_continuous_volume(
+            adatas, n_samples=12, num_depths=bad_num_depths
+        )
+
+
+def test_cli_rejects_num_depths_below_two(tmp_path) -> None:
+    """CLI: --num-depths < 2 must exit non-zero via parser.error before any
+    heavy reconstruction work runs, and must not write an output volume."""
+    in_dir = tmp_path / "in"
+    in_dir.mkdir()
+    for i, adata in enumerate(_two_slice_adatas(z0=0.0, z1=2.0)):
+        adata.write_h5ad(in_dir / f"slice_{i:02d}.h5ad")
+    out_path = tmp_path / "vol.h5ad"
+
+    with pytest.raises(SystemExit):
+        reconstruct(
+            [
+                "--input-dir",
+                str(in_dir),
+                "--output",
+                str(out_path),
+                "--num-depths",
+                "1",
+            ]
+        )
+    assert not Path(out_path).exists()
