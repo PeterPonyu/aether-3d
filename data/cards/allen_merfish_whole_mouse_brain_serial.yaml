@@ -1,0 +1,26 @@
+data_card_id: allen_merfish_whole_mouse_brain_serial
+project: Aether3D
+dataset_name: Allen/Zhuang 2023 MERFISH whole adult mouse brain serial coronal sections
+platform: MERFISH (imaging-based, single-cell resolution), ~500-gene panel
+issue_ref: '#71'
+source_url_or_accession: https://alleninstitute.github.io/abc_atlas_access/
+url_status: verified
+license_or_access_constraints: Allen Brain Cell Atlas public data on AWS S3 bucket allen-brain-cell-atlas; access via the ABC Atlas access package. Review Allen Institute terms.
+contact_or_citation: Zhang et al. 2023, Molecularly defined and spatially resolved cell atlas of the whole mouse brain, Nature (s41586-023-06808-9); Allen Brain Cell Atlas Zhuang-ABCA-1..4.
+serial_slice_fit: native dense serial z-stack — Zhuang-ABCA-1 ~147 serial coronal sections through a single brain; each cell carries brain_section_label (ordered z) + 3D CCF coords. Dense-serial upgrade for issue #66.
+contract_spatial: cell metadata x/y (in-plane section coords)
+contract_z_coord: brain_section index (or CCF z) x physical spacing
+contract_cell_class: class/subclass/supertype/cluster label (provided)
+contract_X: raw cell-by-gene counts (.h5ad)
+raw_count_policy: raw integer counts only — no normalized-only, WSI, FASTQ, or BAM artifacts.
+raw_data_location: data/raw/allen_merfish_whole_mouse_brain_serial/
+processed_data_location: data/processed/allen_merfish_whole_mouse_brain_serial/
+anndata_schema_name: aether_3d_serial_slice
+fetch_mode: external
+preprocessing_command: python scripts/data/fetch_aether_datasets.py --dataset allen_merfish_whole_mouse_brain_serial --dry-run
+split_strategy: virtual_slice_holdout_by_physical_z
+split_seed: 20260529
+created_at_utc: '2026-05-29T00:00:00Z'
+file_size_bytes_or_manifest: multi-GB (allen-brain-cell-atlas S3; ~4.3M cells across 4 specimens)
+content_hash_or_manifest_hash: pending_download_manifest_hash
+derived_figures_or_metrics: [A-F2, A-F4]
