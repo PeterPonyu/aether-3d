@@ -50,32 +50,39 @@ def test_issue_19_holdout_metrics_file_is_tracked():
 
 
 # ---------------------------------------------------------------------------
-# Issue #23 — Sinkhorn underflow: fp64 auto-promotion + RuntimeWarning
+# Issue #23 / #134 — Sinkhorn underflow handled in the log domain
+#
+# #23 mitigated fp32 kernel underflow with fp64 auto-promotion + a RuntimeWarning.
+# #134 supersedes that band-aid with a log-domain (log-sum-exp) solver: the
+# underflow regime is now handled silently and correctly, so there is no longer
+# an "underflow" warning or fp64 promotion to assert. We pin the *outcome* the
+# #23 test cared about (finite, non-collapsed coupling) and that the noisy
+# warning is gone.
 # ---------------------------------------------------------------------------
 
 
-def test_issue_23_sinkhorn_underflow_promotes_to_fp64_and_warns():
-    """
-    When a fp32 cost tensor produces -cost/reg < -80 (kernel underflow risk),
-    compute_uot_coupling_pytorch must:
-      (a) emit a RuntimeWarning mentioning "underflow",
-      (b) return a finite, non-trivially-uniform coupling.
+def test_issue_23_sinkhorn_underflow_handled_in_log_domain_without_warning():
+    """A fp32 cost that drives -cost/reg far negative (kernel underflow in the
+    old exp domain) now yields a finite, non-collapsed coupling with no
+    underflow RuntimeWarning, because the solver runs in the log domain (#134)."""
+    import warnings
 
-    The fix shape chosen in b9fc009 is fp64 auto-promotion + RuntimeWarning
-    rather than a full log-space rewrite — pragmatic mitigation that extends
-    the safe range from ~88 to ~709 in the kernel exponent.
-    """
     from aether_3d.coupling.uot import compute_uot_coupling
 
-    # cost=100, reg=1.0  →  -cost/reg = -100 < -80  →  triggers the guard
+    # cost=100, reg=1.0  →  -cost/reg = -100: the old exp-domain kernel underflows.
     cost = torch.tensor([[100.0, 0.0], [50.0, 200.0]], dtype=torch.float32)
 
-    with pytest.warns(RuntimeWarning, match="underflow"):
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
         src, tgt, weights = compute_uot_coupling(
             cost, reg=1.0, tau=0.05, n_samples=16,
             torch_generator=torch.Generator().manual_seed(0),
         )
 
+    messages = " ".join(str(w.message).lower() for w in caught)
+    assert "underflow" not in messages and "float64" not in messages, (
+        f"log-domain solver should not warn about underflow/fp64; got: {messages!r}"
+    )
     assert len(src) == len(tgt) == len(weights) == 16
     assert torch.isfinite(weights).all(), "coupling weights contain non-finite values"
     assert weights.sum() > 0.0, "coupling weights are all zero (solver collapsed)"

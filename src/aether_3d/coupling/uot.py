@@ -177,6 +177,92 @@ def compute_uot_coupling(
     return src, tgt, weights
 
 
+def compute_uot_plan_pytorch(
+    cost: torch.Tensor,
+    reg: float = 0.8,
+    tau: float = 0.05,
+    max_iter: int = 1000,
+    tol: float = 1e-6,
+) -> torch.Tensor:
+    """Solve the unbalanced Sinkhorn UOT and return the *normalized* transport
+    plan ``P`` (``P.sum() == 1``) of shape ``(n0, n1)``.
+
+    Mathematical parity with POT's ``ot.sinkhorn_unbalanced`` on the normalized
+    plan. The solve runs in the log domain (see below) so it stays finite in
+    the small-``reg`` / large-cost regimes where the exp-domain recursion
+    collapses.
+    """
+    n0, n1 = cost.shape
+    if n0 == 0 or n1 == 0:
+        raise ValueError(f"UOT coupling requires non-empty cost axes; got {tuple(cost.shape)}")
+    device = cost.device
+    dtype = cost.dtype
+
+    # Log-domain stabilized unbalanced Sinkhorn.
+    #
+    # The exp-domain recursion u=(a/Kv)^fi with K=exp(-cost/reg)*(a*b) underflows
+    # whenever -cost/reg is strongly negative (small reg, or the lambda_class=10
+    # term added to a normalized cost): the kernel rounds to 0 and the plan
+    # silently collapses to ~uniform. We instead keep the dual potentials in log
+    # space and combine the log-kernel with torch.logsumexp, which is invariant
+    # to a per-row/column constant shift and so never underflows. This replaces
+    # the float64 promotion band-aid from issue #23 (issue #134).
+    #
+    # Mapping to the exp-domain form: with log_u=log(u), log_v=log(v) and
+    # M = -cost/reg, log_a = log(a), log_b = log(b),
+    #   K = exp(M) * (a * b),   u = (a / (K v))^fi
+    # becomes the logsumexp updates below. The final transport plan
+    # P = u * K * v is recovered as exp(log P); only the *normalized* plan is
+    # used downstream (sampling + weights), so we subtract max(log P) before the
+    # single exponentiation to keep it finite in float32.
+    log_a = torch.full((n0,), -float(np.log(n0)), device=device, dtype=dtype)
+    log_b = torch.full((n1,), -float(np.log(n1)), device=device, dtype=dtype)
+    log_K = -cost / reg  # log of the cost kernel, excluding the a*b prefactor
+    fi = tau / (tau + reg)
+
+    log_u = torch.zeros(n0, device=device, dtype=dtype)
+    log_v = torch.zeros(n1, device=device, dtype=dtype)
+
+    for i in range(max_iter):
+        log_u_prev = log_u.clone()
+        log_v_prev = log_v.clone()
+
+        # log(K v) = log_a_i + logsumexp_j(log_K_ij + log_b_j + log_v_j)
+        log_u = -fi * torch.logsumexp(
+            log_K + (log_b + log_v).unsqueeze(0), dim=1
+        )
+        # log(K^T u) = log_b_j + logsumexp_i(log_K_ij + log_a_i + log_u_i)
+        log_v = -fi * torch.logsumexp(
+            log_K + (log_a + log_u).unsqueeze(1), dim=0
+        )
+
+        # Converge check (absolute change in the log potentials)
+        err_u = torch.max(torch.abs(log_u - log_u_prev))
+        err_v = torch.max(torch.abs(log_v - log_v_prev))
+        err = 0.5 * (err_u + err_v)
+        if err < tol:
+            break
+
+    log_P = (
+        log_u.unsqueeze(1)
+        + log_K
+        + log_a.unsqueeze(1)
+        + log_b.unsqueeze(0)
+        + log_v.unsqueeze(0)
+    )
+    # Shift before exponentiating: a global constant cancels under the
+    # normalization below, so this only guards the final exp from underflow.
+    log_P = log_P - log_P.max()
+    P = torch.exp(log_P)
+
+    total = P.sum()
+    if total > 0:
+        P = P / total
+    else:  # pragma: no cover - the max-shift above keeps at least one entry == 1
+        P = torch.ones_like(P) / P.numel()
+    return P
+
+
 def compute_uot_coupling_pytorch(
     cost: torch.Tensor,
     reg: float = 0.8,
@@ -188,66 +274,12 @@ def compute_uot_coupling_pytorch(
 ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """
     Unbalanced OT coupling solver on GPU/CPU in PyTorch.
-    Mathematical parity with POT's sinkhorn_unbalanced.
+    Solves the log-domain stabilized unbalanced Sinkhorn (mathematical parity
+    with POT's sinkhorn_unbalanced) and samples ``n_samples`` cell pairs from
+    the resulting normalized transport plan.
     """
-    n0, n1 = cost.shape
-    if n0 == 0 or n1 == 0:
-        raise ValueError(f"UOT coupling requires non-empty cost axes; got {tuple(cost.shape)}")
-    device = cost.device
-    dtype = cost.dtype
-    solver_cost = cost
-    if cost.dtype in (torch.float16, torch.bfloat16, torch.float32):
-        underflow_fraction = torch.mean(((-cost / reg) < -80).float()).item()
-        if underflow_fraction > 0:
-            warnings.warn(
-                "compute_uot_coupling_pytorch detected Sinkhorn kernel underflow risk; "
-                "solving in float64 for numerical stability.",
-                RuntimeWarning,
-                stacklevel=2,
-            )
-            solver_cost = cost.to(torch.float64)
-            dtype = solver_cost.dtype
-
-    a_t = torch.ones(n0, device=device, dtype=dtype) / n0
-    b_t = torch.ones(n1, device=device, dtype=dtype) / n1
-
-    # In POT, K = exp(-cost / reg) * (a * b).  Promote underflow-prone
-    # fp32 inputs to float64 above so lower-reg OT does not silently collapse.
-    K = torch.exp(-solver_cost / reg) * (a_t.unsqueeze(1) * b_t.unsqueeze(0))
-
-    u = torch.ones(n0, device=device, dtype=dtype)
-    v = torch.ones(n1, device=device, dtype=dtype)
-    fi = tau / (tau + reg)
-
-    for i in range(max_iter):
-        uprev = u.clone()
-        vprev = v.clone()
-
-        Kv = torch.matmul(K, v)
-        u = (a_t / torch.clamp(Kv, min=1e-12)) ** fi
-        Ktu = torch.matmul(K.T, u)
-        v = (b_t / torch.clamp(Ktu, min=1e-12)) ** fi
-
-        # Converge check
-        err_u = torch.max(torch.abs(u - uprev)) / torch.clamp(
-            torch.maximum(torch.max(torch.abs(u)), torch.max(torch.abs(uprev))), min=1.0
-        )
-        err_v = torch.max(torch.abs(v - vprev)) / torch.clamp(
-            torch.maximum(torch.max(torch.abs(v)), torch.max(torch.abs(vprev))), min=1.0
-        )
-        err = 0.5 * (err_u + err_v)
-        if err < tol:
-            break
-
-    P = u.unsqueeze(1) * K * v.unsqueeze(0)
-
-    # Sample pairs
-    flat_P = P.view(-1)
-    flat_P_sum = flat_P.sum()
-    if flat_P_sum > 0:
-        flat_P = flat_P / flat_P_sum
-    else:
-        flat_P = torch.ones_like(flat_P) / flat_P.numel()
+    n1 = cost.shape[1]
+    flat_P = compute_uot_plan_pytorch(cost, reg, tau, max_iter, tol).view(-1)
 
     idx = torch.multinomial(
         flat_P, num_samples=n_samples, replacement=True, generator=generator
