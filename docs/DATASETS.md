@@ -223,6 +223,7 @@ and is dispatched by the unified CLI `scripts/data/fetch_aether_datasets.py`
 | #73 / #78 / #179 | `mosta_mouse_embryo_serial` | Stereo-seq | ✅ verified | `external` |
 | #74 | `starmap_plus_mouse_cns_3d` | STARmap PLUS (3D in-situ) | ⚠️ UNVERIFIED | `unverified` |
 | #75 | `stereoseq_whole_mouse_brain_serial` | Stereo-seq | ⚠️ UNVERIFIED | `unverified` |
+| #76 | `merfish_hypothalamus_moffitt_2018` | MERFISH (single-cell) | ✅ verified | `python_native` |
 
 **fetch_mode semantics** — `python_native`: squidpy/scanpy one-liner loader
 (wired, opt-in via `--fetch`); `external`: verified URL but multi-GB, prints the
@@ -263,6 +264,9 @@ each consolidated dataset are recorded here:
   (S0896-6273(25)00133-3); preprint bioRxiv 2023.12.03.569501; raw CNGB
   CNP0003837, processed BSDC DOI `10.12412/BSDC.1699433096.20001`
   (⚠️ raw integer count-matrix bundle unverified).
+- **#76 MERFISH hypothalamus** — Moffitt et al. 2018, *Molecular, spatial, and
+  functional single-cell profiling of the hypothalamic preoptic region*, Science
+  (raw matrix via Dryad `doi:10.5061/dryad.8t8s248`, CC0).
 
 ### Ingestion roadmap
 

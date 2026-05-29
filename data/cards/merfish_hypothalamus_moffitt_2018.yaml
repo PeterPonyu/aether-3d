@@ -1,0 +1,26 @@
+data_card_id: merfish_hypothalamus_moffitt_2018
+project: Aether3D
+dataset_name: MERFISH mouse hypothalamic preoptic region (Moffitt 2018)
+platform: MERFISH (imaging-based, single-cell resolution)
+issue_ref: '#76'
+source_url_or_accession: squidpy.datasets.merfish (figshare 28169379); raw matrix via Dryad doi:10.5061/dryad.8t8s248
+url_status: verified
+license_or_access_constraints: CC0 (raw Dryad ~1.03 GB). squidpy loader ships a normalized matrix; use the Dryad raw matrix for DL training.
+contact_or_citation: Moffitt et al. 2018, Molecular, spatial, and functional single-cell profiling of the hypothalamic preoptic region, Science.
+serial_slice_fit: zero-glue Python-native serial z-stack — 8 anterior-posterior Bregma z-levels (obs['Bregma']) + native obsm['spatial3d']; 73,655 x 161. Split each Bregma level into its own AnnData for the ordered stack.
+contract_spatial: obsm['spatial'] (2D in-plane per Bregma section)
+contract_z_coord: obs['Bregma'] (or obsm['spatial3d'][:, 2])
+contract_cell_class: obs['Cell_class']
+contract_X: squidpy loader is normalized — use Dryad raw matrix for DL training
+raw_count_policy: raw integer counts only for DL training (Dryad raw matrix); squidpy normalized matrix is exploration-only.
+raw_data_location: data/raw/merfish_hypothalamus_moffitt_2018/
+processed_data_location: data/processed/merfish_hypothalamus_moffitt_2018/
+anndata_schema_name: aether_3d_serial_slice
+fetch_mode: python_native
+preprocessing_command: python scripts/data/fetch_aether_datasets.py --dataset merfish_hypothalamus_moffitt_2018 --dry-run
+split_strategy: virtual_slice_holdout_by_physical_z
+split_seed: 20260529
+created_at_utc: '2026-05-29T00:00:00Z'
+file_size_bytes_or_manifest: 73655 x 161 (squidpy); raw Dryad ~1.03 GB
+content_hash_or_manifest_hash: pending_download_manifest_hash
+derived_figures_or_metrics: [A-F2, A-F4]
