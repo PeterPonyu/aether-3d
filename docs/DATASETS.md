@@ -225,6 +225,7 @@ and is dispatched by the unified CLI `scripts/data/fetch_aether_datasets.py`
 | #75 | `stereoseq_whole_mouse_brain_serial` | Stereo-seq | ⚠️ UNVERIFIED | `unverified` |
 | #76 | `merfish_hypothalamus_moffitt_2018` | MERFISH (single-cell) | ✅ verified | `python_native` |
 | #77 | `visium_breast_cancer_serial` | Visium v1 | ✅ verified | `python_native` |
+| #79 | `brca_imc_kuett_2022` | 3D-IMC | ✅ verified | `manifest_script` |
 
 **fetch_mode semantics** — `python_native`: squidpy/scanpy one-liner loader
 (wired, opt-in via `--fetch`); `external`: verified URL but multi-GB, prints the
@@ -270,6 +271,9 @@ each consolidated dataset are recorded here:
   (raw matrix via Dryad `doi:10.5061/dryad.8t8s248`, CC0).
 - **#77 Visium breast cancer serial pair** — 10x Genomics public datasets,
   Human Breast Cancer Block A Section 1 & 2 (10x Public Datasets License).
+- **#79 Kuett 2022 3D-IMC** — Kuett et al., *Three-dimensional imaging mass
+  cytometry for highly multiplexed molecular and cellular mapping of tissues and
+  the tumor microenvironment* (Zenodo `10.5281/zenodo.4752030`).
 
 ### Ingestion roadmap
 
