@@ -1,0 +1,26 @@
+data_card_id: merfish_mouse_brain_receptor_map
+project: Aether3D
+dataset_name: Vizgen MERFISH Mouse Brain Receptor Map
+platform: MERFISH (imaging-based, single-cell resolution)
+issue_ref: '#66'
+source_url_or_accession: https://info.vizgen.com/mouse-brain-data
+url_status: unverified
+license_or_access_constraints: Vizgen showcase data; verify redistribution terms on the canonical page before caching raw files.
+contact_or_citation: Vizgen MERFISH Mouse Brain Receptor Map showcase dataset (info.vizgen.com/mouse-brain-data).
+serial_slice_fit: 9 sections (3 coronal positions x 3 biological replicates) — coarse 3-level stack; dense-serial upgrade tracked in issue #71.
+contract_spatial: cell metadata center_x / center_y (2D in-plane)
+contract_z_coord: coronal-position index x physical section spacing
+contract_cell_class: provided cell-type annotation (cluster if absent)
+contract_X: cell_by_gene raw counts
+raw_count_policy: raw integer counts only — no normalized-only, WSI, FASTQ, or BAM artifacts.
+raw_data_location: data/raw/merfish_mouse_brain_receptor_map/
+processed_data_location: data/processed/merfish_mouse_brain_receptor_map/
+anndata_schema_name: aether_3d_serial_slice
+fetch_mode: unverified
+preprocessing_command: python scripts/data/fetch_aether_datasets.py --dataset merfish_mouse_brain_receptor_map --dry-run
+split_strategy: virtual_slice_holdout_by_physical_z
+split_seed: 20260529
+created_at_utc: '2026-05-29T00:00:00Z'
+file_size_bytes_or_manifest: 3-7 GB (estimate; UNVERIFIED until canonical bundle is listed)
+content_hash_or_manifest_hash: pending_download_manifest_hash
+derived_figures_or_metrics: [A-F2, A-F4]
