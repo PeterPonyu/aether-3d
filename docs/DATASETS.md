@@ -217,6 +217,7 @@ and is dispatched by the unified CLI `scripts/data/fetch_aether_datasets.py`
 | #66 | `merfish_mouse_brain_receptor_map` | MERFISH (single-cell) | ⚠️ UNVERIFIED | `unverified` |
 | #67 | `visium_hd_mouse_brain` | Visium HD (2 µm bins) | ✅ verified | `external` |
 | #68 | `visium_hd_tonsil` | Visium HD (2 µm bins) | ✅ verified | `external` |
+| #69 | `gse223561_liver_regeneration_serial` | Visium v1 | ✅ verified | `external` |
 
 **fetch_mode semantics** — `python_native`: squidpy/scanpy one-liner loader
 (wired, opt-in via `--fetch`); `external`: verified URL but multi-GB, prints the
@@ -239,6 +240,8 @@ each consolidated dataset are recorded here:
   `info.vizgen.com/mouse-brain-data` (⚠️ direct hotlink unverified).
 - **#67 / #68 Visium HD Mouse Brain / Tonsil** — 10x Genomics Visium HD CytAssist
   public datasets (10x Genomics Public Datasets License).
+- **#69 GSE223561** — *Multimodal decoding of human liver regeneration*, GEO
+  GSE223561 (human liver **regeneration**, NOT cancer; ~9.1 GB).
 
 ### Ingestion roadmap
 
