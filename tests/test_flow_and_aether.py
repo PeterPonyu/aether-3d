@@ -657,3 +657,87 @@ def test_pyproject_pins_pytorch_lightning_and_pytest_pythonpath():
     assert pytest_block.get("testpaths") == ["tests"], (
         f"pytest ini_options.testpaths drifted (issue #20); got {pytest_block}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Issue #140 — unified, shared training-time sampler
+# ---------------------------------------------------------------------------
+
+
+def test_sample_time_is_deterministic_and_respects_train_eps():
+    """The shared sampler is reproducible for a fixed seed and honours
+    train_eps (which the module's old hardcoded [0.01, 0.99] range bypassed)."""
+    transport = create_flow_transport(
+        path="linear", prediction="score", train_eps=0.1
+    )
+    g1 = torch.Generator().manual_seed(0)
+    g2 = torch.Generator().manual_seed(0)
+    t1 = transport.sample_time(64, torch.device("cpu"), generator=g1)
+    t2 = transport.sample_time(64, torch.device("cpu"), generator=g2)
+
+    assert torch.equal(t1, t2)
+    assert torch.all(t1 >= 0.1) and torch.all(t1 <= 1.0)
+
+
+def test_module_and_transport_share_one_time_sampler():
+    """Both training paths (FlowTransport.training_losses and
+    AetherFlowModule.training_step) route time sampling through the *same*
+    transport.sample_time, so for a fixed seed they draw identical t and the
+    historical range inconsistency ([0.01,0.99] vs [train_eps,1]) is gone."""
+    from aether_3d.modules.aether_flow_module import AetherFlowModule
+
+    class TimeCaptureModel(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.dummy = torch.nn.Parameter(torch.zeros(()))
+            self.seen_t = None
+
+        def forward(self, state, t, class_condition):
+            self.seen_t = t.detach().clone()
+            return {
+                "vx": torch.zeros_like(state["x"]) + self.dummy,
+                "vg": torch.zeros_like(state["g"]) + self.dummy,
+                "vc": torch.zeros_like(state["c"]) + self.dummy,
+            }
+
+    cfg = Aether3DConfig(hidden_size=8, depth=1, num_heads=2, patch_size=4)
+    model = TimeCaptureModel()
+    module = AetherFlowModule(cfg, model)  # type: ignore[arg-type]
+    n = 5
+    batch = {
+        "x0": torch.zeros(n, 2), "g0": torch.zeros(n, 4),
+        "c0": torch.eye(2)[torch.zeros(n, dtype=torch.long)],
+        "x1": torch.ones(n, 2), "g1": torch.ones(n, 4),
+        "c1": torch.eye(2)[torch.ones(n, dtype=torch.long)],
+        "z0": torch.zeros(n, 1), "z1": torch.ones(n, 1),
+        "delta_z": torch.ones(n, 1),
+    }
+
+    # The first stochastic op in training_step is the time sample, so seeding
+    # the global RNG then replaying transport.sample_time must reproduce it.
+    torch.manual_seed(123)
+    module.training_step(batch, 0)
+    t_module = model.seen_t
+
+    torch.manual_seed(123)
+    t_replay = module.transport.sample_time(n, torch.device("cpu"))
+    assert torch.equal(t_module, t_replay)
+
+    # And FlowTransport.training_losses uses the same sampler: training_losses
+    # draws x0 = randn_like(x1) first, then t = sample_time(...).
+    class VelModel(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.dummy = torch.nn.Parameter(torch.zeros(()))
+
+        def forward(self, xt, t, **kwargs):
+            return torch.zeros_like(xt) + self.dummy
+
+    transport = module.transport
+    x1 = torch.randn(n, 3)
+    torch.manual_seed(7)
+    out = transport.training_losses(VelModel(), x1)
+    torch.manual_seed(7)
+    _ = torch.randn_like(x1)
+    t_expected = transport.sample_time(n, x1.device)
+    assert torch.equal(out["t"], t_expected)
