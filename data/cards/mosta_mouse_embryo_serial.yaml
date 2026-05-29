@@ -1,0 +1,26 @@
+data_card_id: mosta_mouse_embryo_serial
+project: Aether3D
+dataset_name: Stereo-seq MOSTA mouse embryo serial sagittal sections
+platform: Stereo-seq (DNB-patterned array, sub-cellular resolution)
+issue_ref: '#73, #78, #179'
+source_url_or_accession: https://ftp.cngb.org/pub/SciRAID/stomics/STDS0000058/
+url_status: verified
+license_or_access_constraints: CC BY 4.0. External CNGB FTP — manual/staged download, never auto-fetched (multi-section .h5ad). Record db.cngb.org/stomics/datasets/STDS0000058 (CNP0001543).
+contact_or_citation: Chen et al. 2022, Spatiotemporal transcriptomic atlas of mouse organogenesis using DNA nanoball-patterned arrays, Cell (S0092-8674(22)00399-3); MOSTA db.cngb.org/stomics/mosta.
+serial_slice_fit: E16.5 — 13 serial sagittal sections of a SINGLE embryo (53 total across stages); the paper's true 3D reconstruction target. Restrict to one embryo so z is physically meaningful.
+contract_spatial: obsm['spatial'] (sub-cellular bin/cell centers per section)
+contract_z_coord: ordered serial sagittal-section index x physical section spacing (single embryo block)
+contract_cell_class: provided annotation (tissue/region/cell type) or cluster
+contract_X: raw Stereo-seq counts (.gef / per-section .h5ad)
+raw_count_policy: raw integer counts only — no normalized-only, WSI, FASTQ, or BAM artifacts.
+raw_data_location: data/raw/mosta_mouse_embryo_serial/
+processed_data_location: data/processed/mosta_mouse_embryo_serial/
+anndata_schema_name: aether_3d_serial_slice
+fetch_mode: external
+preprocessing_command: python scripts/data/fetch_aether_datasets.py --dataset mosta_mouse_embryo_serial --dry-run
+split_strategy: virtual_slice_holdout_by_physical_z
+split_seed: 20260529
+created_at_utc: '2026-05-29T00:00:00Z'
+file_size_bytes_or_manifest: per-section .h5ad files (E16.5: 13 serial sagittal sections; 53 total)
+content_hash_or_manifest_hash: pending_download_manifest_hash
+derived_figures_or_metrics: [A-F2, A-F4]
