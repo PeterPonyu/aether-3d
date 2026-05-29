@@ -214,6 +214,7 @@ and is dispatched by the unified CLI `scripts/data/fetch_aether_datasets.py`
 
 | Issue | data_card_id | Platform | URL status | fetch_mode |
 |---|---|---|:--:|---|
+| #66 | `merfish_mouse_brain_receptor_map` | MERFISH (single-cell) | ⚠️ UNVERIFIED | `unverified` |
 
 **fetch_mode semantics** — `python_native`: squidpy/scanpy one-liner loader
 (wired, opt-in via `--fetch`); `external`: verified URL but multi-GB, prints the
@@ -231,6 +232,9 @@ tracking issue and never fabricates a download URL.
 
 No `LITERATURE_LINKS.md` exists in this repo, so the source-paper citations for
 each consolidated dataset are recorded here:
+
+- **#66 MERFISH Mouse Brain Receptor Map** — Vizgen showcase dataset,
+  `info.vizgen.com/mouse-brain-data` (⚠️ direct hotlink unverified).
 
 ### Ingestion roadmap
 
