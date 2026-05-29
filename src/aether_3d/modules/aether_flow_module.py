@@ -53,7 +53,10 @@ class AetherFlowModule(pl.LightningModule):
         z0, z1 = batch["z0"], batch["z1"]
         delta_z = batch["delta_z"]
 
-        t = torch.rand(x0.shape[0], device=x0.device) * 0.98 + 0.01
+        # Route through the transport's shared sampler so this path and
+        # FlowTransport.training_losses can never disagree on the time range,
+        # and so transport.train_eps is honoured (issue #140).
+        t = self.transport.sample_time(x0.shape[0], device=x0.device)
 
         # Interpolate states and get velocity targets using transport path planning
         _, xt, ux_t = self.transport.path.plan(t, x0, x1)
