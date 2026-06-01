@@ -9,13 +9,17 @@ on:
 jobs:
   quality:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
     steps:
     - uses: actions/checkout@v4
 
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
-        python-version: "3.10"
+        python-version: ${{ matrix.python-version }}
         cache: 'pip'
 
     - name: Install lint/type dependencies
@@ -26,16 +30,18 @@ jobs:
     - name: Ruff (enforced)
       run: ruff check .
 
-    - name: Mypy strict (reporting, non-blocking)
-      # Strict mypy currently surfaces a large body of pre-existing typing debt
-      # (missing annotations + untyped third-party stubs). Run it so the
-      # configured strict check is no longer omitted from CI, but keep it
-      # non-blocking until that debt is paid down under a dedicated effort.
-      continue-on-error: true
+    - name: Mypy strict (enforced)
+      # The strict-mypy paydown (issue #62) is complete: the whole src/aether_3d
+      # package is strict-clean, so mypy is now a hard, blocking gate. Any new
+      # typing error fails CI to keep the package strict-clean going forward.
       run: mypy src/aether_3d
 
   test:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
     steps:
     - uses: actions/checkout@v4
       with:
@@ -44,7 +50,7 @@ jobs:
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
-        python-version: "3.10"
+        python-version: ${{ matrix.python-version }}
         cache: 'pip'
 
     - name: Install package and test dependencies
@@ -58,6 +64,11 @@ jobs:
       run: |
         pytest
 
-    - name: Run bounded synthetic E2E smoke
+    - name: Run bounded synthetic E2E smoke (train + reconstruct)
+      # The smoke script trains the model (fast_dev_run=1) before
+      # reconstruction so the "Deep" E2E actually exercises the full
+      # train -> reconstruct path (issue #124). Do not drop the training
+      # phase without also updating scripts/e2e/verify_aether_pipeline.py
+      # and tests/test_ci_contract.py::test_deep_e2e_includes_training.
       run: |
         python scripts/e2e/verify_aether_pipeline.py

@@ -16,10 +16,10 @@ from __future__ import annotations
 
 import gc
 import platform
-import resource
 import socket
 import subprocess
 import time
+import tracemalloc
 from dataclasses import asdict, dataclass, field
 from typing import Any, Optional, Sequence
 
@@ -83,7 +83,7 @@ def _capture_git_sha() -> Optional[str]:
 def _capture_versions() -> tuple[Optional[str], Optional[str], str]:
     """Returns (torch_version, cuda_version, device)."""
     try:
-        import torch  # type: ignore
+        import torch
 
         tv = torch.__version__
         if torch.cuda.is_available():
@@ -94,29 +94,48 @@ def _capture_versions() -> tuple[Optional[str], Optional[str], str]:
 
 
 def _peak_memory_mb(device: str) -> float:
-    """Peak memory in MB. Uses CUDA tracker on GPU, RSS on CPU."""
+    """Peak memory in MB.  Uses CUDA tracker on GPU, ``tracemalloc`` on CPU.
+
+    On CPU the previous implementation read ``resource.ru_maxrss``, which is
+    the maximum resident set size **over the whole process lifetime** and is
+    strictly monotonic — so every sweep point reported the cumulative
+    high-water mark instead of its own footprint.  ``tracemalloc`` records
+    Python-allocation peaks per measurement window and can be reset between
+    points.  See issue #139.
+    """
     if device == "cuda":
         try:
-            import torch  # type: ignore
+            import torch
 
             return float(torch.cuda.max_memory_allocated()) / (1024 ** 2)
         except (ImportError, RuntimeError):
             return 0.0
-    # CPU peak: resource.ru_maxrss is in KB on Linux, bytes on macOS
-    rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
-    return float(rss) / 1024.0 if platform.system() == "Linux" else float(rss) / (1024 ** 2)
+    if not tracemalloc.is_tracing():
+        return 0.0
+    _current, peak = tracemalloc.get_traced_memory()
+    return float(peak) / (1024 ** 2)
 
 
 def _reset_memory_tracker(device: str) -> None:
+    """Reset the per-point peak-memory tracker for ``device``.
+
+    On CPU this restarts ``tracemalloc`` (stop + clear + start) so the next
+    ``_peak_memory_mb`` call measures only allocations made between the
+    reset and the read.  See issue #139.
+    """
     if device == "cuda":
         try:
-            import torch  # type: ignore
+            import torch
 
             torch.cuda.reset_peak_memory_stats()
             torch.cuda.empty_cache()
         except (ImportError, RuntimeError):
             pass
     gc.collect()
+    # Restart tracemalloc so the peak window starts fresh for this point.
+    if tracemalloc.is_tracing():
+        tracemalloc.stop()
+    tracemalloc.start()
 
 
 def make_synthetic_stack(

@@ -11,6 +11,7 @@ from collections.abc import Sequence
 from typing import Any
 
 import numpy as np
+import numpy.typing as npt
 
 
 __all__ = [
@@ -21,7 +22,7 @@ __all__ = [
 
 
 def radius_neighborhood_enrichment(
-    coords: np.ndarray,
+    coords: npt.NDArray[Any],
     labels: Sequence[Any],
     target_label: Any,
     radius: float,
@@ -99,7 +100,7 @@ def radius_neighborhood_enrichment(
 
 
 def z_axis_density_around(
-    coords_3d: np.ndarray,
+    coords_3d: npt.NDArray[Any],
     labels: Sequence[Any],
     query_label: Any,
     z_bin_width: float = 10.0,
@@ -137,9 +138,9 @@ def z_axis_density_around(
         return {"bin_centers": np.array([]), "per_celltype_density": {}}
 
     zmin, zmax = float(c[:, 2].min()), float(c[:, 2].max())
-    bin_edges = np.arange(zmin, zmax + z_bin_width, z_bin_width)
+    bin_edges: npt.NDArray[np.floating[Any]] = np.arange(zmin, zmax + z_bin_width, z_bin_width)
     if bin_edges.size < 2:
-        bin_edges = np.array([zmin, zmin + z_bin_width])
+        bin_edges = np.array([zmin, zmin + z_bin_width], dtype=np.float64)
     bin_centers = 0.5 * (bin_edges[:-1] + bin_edges[1:])
 
     # Optional xy restriction: keep only non-query cells within xy_radius
@@ -163,7 +164,7 @@ def z_axis_density_around(
     cand_lbl = labels_arr[candidate_idx]
 
     all_celltypes = sorted({lbl for lbl in cand_lbl.tolist()})
-    density: dict[Any, np.ndarray] = {}
+    density: dict[Any, npt.NDArray[np.float64]] = {}
     for ct in all_celltypes:
         z_ct = cand_z[cand_lbl == ct]
         counts, _ = np.histogram(z_ct, bins=bin_edges)
@@ -172,7 +173,7 @@ def z_axis_density_around(
 
 
 def per_region_proportion_spearman(
-    coords: np.ndarray,
+    coords: npt.NDArray[Any],
     labels: Sequence[Any],
     region_assignments: Sequence[Any],
     truth_proportions_per_region: dict[Any, dict[Any, float]] | None = None,

@@ -99,8 +99,15 @@ def plot_continuous_tissue_3d(
         if color_by not in adata.obs:
             raise ValueError(f"'{color_by}' not found in adata.var_names or adata.obs.columns.")
         vals = adata.obs[color_by].values
-        # If it's a category/object, map it to indices
-        if isinstance(vals.dtype, (pd.CategoricalDtype, object)) or vals.dtype.kind in "OSU":
+        # If it's a category/string/bool, map it to integer codes.  Previously
+        # the branch tested ``isinstance(vals.dtype, object)`` which is *always*
+        # True (every dtype instance is an ``object``), so numeric ``obs``
+        # columns were silently collapsed to category codes.  See issue #116.
+        is_categorical = (
+            isinstance(vals.dtype, pd.CategoricalDtype)
+            or vals.dtype.kind in "OSUb"
+        )
+        if is_categorical:
             categories = pd.Categorical(vals)
             vals = categories.codes
 

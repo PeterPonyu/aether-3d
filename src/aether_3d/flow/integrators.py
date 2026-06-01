@@ -10,7 +10,7 @@ swap in torchode or torchsde later via the same interface.
 
 from __future__ import annotations
 
-from typing import Callable, Literal, Optional
+from typing import Callable, Literal, Optional, cast
 
 import torch
 from torchdiffeq import odeint
@@ -54,7 +54,7 @@ def ode(
             atol=atol,
             rtol=rtol,
         )
-        return sol[-1]
+        return cast(torch.Tensor, sol[-1])
 
     return sample
 

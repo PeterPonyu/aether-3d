@@ -4,9 +4,13 @@ linearly between the two bracketing visible slices.
 Mid-grade 2.5D baseline; the standard linear-interpolation reference for
 virtual-slice comparisons. Always available.
 
-Cells from each side are paired by simple index up to min(n_a, n_b), and
-gene expression + spatial coordinates are interpolated by the weight
-w = (z_target - z_a) / (z_b - z_a).
+Cells from each side are paired by spatial nearest-neighbor in 2D (the only
+honest signal available without ground-truth correspondences); gene
+expression + spatial coordinates are interpolated by the weight
+w = (z_target - z_a) / (z_b - z_a). The pairing is deterministic in the
+cell content (not the input row order), so reported baseline numbers no
+longer depend on how rows happen to be laid out in the input AnnData
+(issue #147).
 """
 
 from __future__ import annotations
@@ -66,18 +70,31 @@ class LinearInterpAdapter(VolumeBaseAdapter):
             w = (float(z_target) - z_a) / denom
 
             n_pair = min(a.n_obs, b.n_obs)
-            X_a = a.X[:n_pair]
-            if hasattr(X_a, "toarray"):
-                X_a = X_a.toarray()
-            X_a = np.asarray(X_a, dtype=np.float32)
-            X_b = b.X[:n_pair]
-            if hasattr(X_b, "toarray"):
-                X_b = X_b.toarray()
-            X_b = np.asarray(X_b, dtype=np.float32)
+
+            # Ground-truth-style pairing: iterate the smaller slice in a
+            # coords-deterministic order, then for each cell pick the nearest
+            # neighbor in the other slice by 2D Euclidean distance. This makes
+            # the output a function of cell *content*, not input row order
+            # (issue #147).
+            xy_a_full = np.asarray(a.obsm[inp.spatial_key], dtype=np.float32)
+            xy_b_full = np.asarray(b.obsm[inp.spatial_key], dtype=np.float32)
+
+            order_a = np.lexsort((xy_a_full[:, 1], xy_a_full[:, 0]))[:n_pair]
+            dists = ((xy_a_full[order_a, None, :] - xy_b_full[None, :, :]) ** 2).sum(axis=2)
+            nearest_b = np.argmin(dists, axis=1)
+
+            X_a_raw = a.X[order_a]
+            if hasattr(X_a_raw, "toarray"):
+                X_a_raw = X_a_raw.toarray()
+            X_a = np.asarray(X_a_raw, dtype=np.float32)
+            X_b_raw = b.X[nearest_b]
+            if hasattr(X_b_raw, "toarray"):
+                X_b_raw = X_b_raw.toarray()
+            X_b = np.asarray(X_b_raw, dtype=np.float32)
             X_v = (1.0 - w) * X_a + w * X_b
 
-            xy_a = np.asarray(a.obsm[inp.spatial_key][:n_pair], dtype=np.float32)
-            xy_b = np.asarray(b.obsm[inp.spatial_key][:n_pair], dtype=np.float32)
+            xy_a = xy_a_full[order_a]
+            xy_b = xy_b_full[nearest_b]
             xy_v = (1.0 - w) * xy_a + w * xy_b
             z_col = np.full((n_pair, 1), float(z_target), dtype=np.float32)
 

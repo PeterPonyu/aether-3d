@@ -29,15 +29,18 @@ upstream library can be wired later for proper computation.
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Any, Optional
 
 import numpy as np
+import numpy.typing as npt
 
 
 # -- Betti-0 via k-NN graph union-find ------------------------------------
 
 
-def betti_zero(coords: np.ndarray, k: int = 6, edge_threshold: Optional[float] = None) -> int:
+def betti_zero(
+    coords: npt.NDArray[np.floating[Any]], k: int = 6, edge_threshold: Optional[float] = None
+) -> int:
     """Count connected components in a k-NN graph over a 2D/3D point cloud.
 
     A reconstructed tissue slice should match the ground-truth Betti-0
@@ -90,15 +93,39 @@ def betti_zero(coords: np.ndarray, k: int = 6, edge_threshold: Optional[float] =
     return len(roots)
 
 
+def _mean_knn_distance(coords: npt.NDArray[np.floating[Any]], k: int = 6) -> float:
+    """Mean k-NN edge length over a point cloud.
+
+    Scale-aware companion to the integer component count: a collapsed cloud
+    (every cell at the same location) has a mean k-NN distance of 0, which
+    distinguishes it from a faithful cloud with the same component count.
+    """
+    n = coords.shape[0]
+    if n < 2:
+        return 0.0
+    k_use = min(k, n - 1)
+    diff = coords[:, None, :] - coords[None, :, :]
+    sq = (diff * diff).sum(axis=-1)
+    np.fill_diagonal(sq, np.inf)
+    knn_sq = np.partition(sq, k_use, axis=1)[:, :k_use]
+    return float(np.sqrt(knn_sq).mean())
+
+
 def betti_zero_stability(
-    coords_truth: np.ndarray,
-    coords_recon: np.ndarray,
+    coords_truth: npt.NDArray[np.floating[Any]],
+    coords_recon: npt.NDArray[np.floating[Any]],
     k: int = 6,
 ) -> float:
-    """Symmetric stability of Betti-0 across truth and reconstruction.
+    """Scale-aware Betti-0 stability across truth and reconstruction.
 
-    Returns 1.0 when both components counts match, dropping toward 0 as they
-    diverge. Defined as min(b_t, b_r) / max(b_t, b_r) with NaN on empty.
+    Combines the integer-component ratio with a mean-k-NN-distance ratio so a
+    *collapsed* reconstruction (every cell at the same point — same `b_r=1`
+    as the truth but topologically degenerate) does not score 1.0.
+
+    Issue #133: the previous min/max-on-integer-counts definition gave 1.0
+    for any reasonably dense slice (k-NN graph collapses to one component)
+    regardless of reconstruction quality, including a fully collapsed
+    reconstruction.
     """
     if coords_truth.size == 0 or coords_recon.size == 0:
         return float("nan")
@@ -106,17 +133,29 @@ def betti_zero_stability(
     b_r = betti_zero(coords_recon, k=k)
     if max(b_t, b_r) == 0:
         return float("nan")
-    return float(min(b_t, b_r) / max(b_t, b_r))
+    component_ratio = min(b_t, b_r) / max(b_t, b_r)
+
+    # Penalise mean-k-NN-distance mismatch (catches collapse).
+    scale_t = _mean_knn_distance(coords_truth, k=k)
+    scale_r = _mean_knn_distance(coords_recon, k=k)
+    if scale_t == 0.0 and scale_r == 0.0:
+        scale_ratio = 1.0
+    elif scale_t == 0.0 or scale_r == 0.0:
+        scale_ratio = 0.0
+    else:
+        scale_ratio = min(scale_t, scale_r) / max(scale_t, scale_r)
+
+    return float(component_ratio * scale_ratio)
 
 
 # -- Voxelized flow divergence --------------------------------------------
 
 
 def flow_divergence_map(
-    coords: np.ndarray,
-    velocities: np.ndarray,
+    coords: npt.NDArray[np.floating[Any]],
+    velocities: npt.NDArray[np.floating[Any]],
     grid_size: int = 16,
-) -> np.ndarray:
+) -> npt.NDArray[np.float32]:
     """Per-voxel divergence ∇·v computed via central differences on a grid.
 
     For a velocity field that preserves mass, ∇·v ≈ 0 everywhere. Local
@@ -146,8 +185,8 @@ def flow_divergence_map(
     ix = np.clip(((coords[:, 0] - xmin) / xr * (grid_size - 1)).astype(int), 0, grid_size - 1)
     iy = np.clip(((coords[:, 1] - ymin) / yr * (grid_size - 1)).astype(int), 0, grid_size - 1)
 
-    grid_vx = np.zeros((grid_size, grid_size), dtype=np.float64)
-    grid_vy = np.zeros((grid_size, grid_size), dtype=np.float64)
+    grid_vx: npt.NDArray[np.float64] = np.zeros((grid_size, grid_size), dtype=np.float64)
+    grid_vy: npt.NDArray[np.float64] = np.zeros((grid_size, grid_size), dtype=np.float64)
     counts = np.zeros((grid_size, grid_size), dtype=np.float64)
     for ci in range(coords.shape[0]):
         grid_vx[iy[ci], ix[ci]] += velocities[ci, 0]
@@ -170,7 +209,7 @@ def flow_divergence_map(
     return (dvx_dx + dvy_dy).astype(np.float32)
 
 
-def divergence_summary(div_map: np.ndarray) -> dict[str, float]:
+def divergence_summary(div_map: npt.NDArray[np.floating[Any]]) -> dict[str, float]:
     """Reduce a divergence map to scalars: mean |∇·v|, max |∇·v|, RMS ∇·v."""
     finite = div_map[np.isfinite(div_map)]
     if finite.size == 0:
@@ -189,7 +228,7 @@ def divergence_summary(div_map: np.ndarray) -> dict[str, float]:
 # -- Velocity anisotropy --------------------------------------------------
 
 
-def velocity_anisotropy(velocities: np.ndarray) -> float:
+def velocity_anisotropy(velocities: npt.NDArray[np.floating[Any]]) -> float:
     """Eigenvalue ratio of the velocity covariance.
 
     Returns λ_max / λ_min, where eigenvalues are of the 2×2 covariance matrix
@@ -214,9 +253,9 @@ def velocity_anisotropy(velocities: np.ndarray) -> float:
 
 
 def topology_metrics(
-    coords_truth: np.ndarray,
-    coords_recon: np.ndarray,
-    velocities_recon: Optional[np.ndarray] = None,
+    coords_truth: npt.NDArray[np.floating[Any]],
+    coords_recon: npt.NDArray[np.floating[Any]],
+    velocities_recon: Optional[npt.NDArray[np.floating[Any]]] = None,
     grid_size: int = 16,
     k: int = 6,
 ) -> dict[str, float]:
