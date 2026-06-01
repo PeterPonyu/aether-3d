@@ -310,6 +310,12 @@ class AetherReconstructor:
                 new_g = concat_end[:, spatial_dim : spatial_dim + gene_dim]
                 new_c = torch.softmax(concat_end[:, spatial_dim + gene_dim :], dim=-1)
 
+                # Net spatial flow each virtual cell underwent under the velocity
+                # field over the depth interval [0, d]: dx = x(d) - x(0). This is
+                # the per-cell velocity the reconstructor's ODE integrated, kept
+                # for downstream flow-divergence + anisotropy diagnostics.
+                spatial_velocity = (new_x - x_start).detach().cpu().numpy()
+
                 z_val = z_offset + d * thickness
                 z_arr = np.full((n_current, 1), z_val)
 
@@ -328,6 +334,8 @@ class AetherReconstructor:
                 )
                 # Store predicted class probabilities
                 layer_adata.obsm["cell_class_vel"] = new_c.detach().cpu().numpy()
+                # Store the integrated spatial flow (per-cell velocity).
+                layer_adata.obsm["velocity"] = spatial_velocity
                 all_cells.append(layer_adata)
 
             # Each adjacent-slice interval includes both endpoints; advance by
