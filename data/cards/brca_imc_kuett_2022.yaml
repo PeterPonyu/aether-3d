@@ -1,9 +1,19 @@
 data_card_id: brca_imc_kuett_2022
 project: Aether3D
 dataset_name: Kuett 2022 3D IMC breast cancer stack
+platform: 3D Imaging Mass Cytometry (3D-IMC / CyTOF imaging)
+issue_ref: '#79'
 source_url_or_accession: https://doi.org/10.5281/zenodo.4752030
+url_status: verified
 license_or_access_constraints: Public Zenodo dataset; verify exact file license before redistributing raw data.
 contact_or_citation: Kuett et al., Three-dimensional imaging mass cytometry for highly multiplexed molecular and cellular mapping of tissues and the tumor microenvironment.
+serial_slice_fit: native 3D-IMC z-stack (~6.66 GB raw TIFF + masks + CSV). BLOCKED / NOT AnnData-ready until steinbock conversion produces a schema-valid AnnData with z_coord.
+contract_spatial: per-cell x/y centroid from steinbock cell segmentation
+contract_z_coord: z-layer index x physical IMC section spacing
+contract_cell_class: cell-phenotype label from Phenograph / manual annotation
+contract_X: integer protein counts per cell extracted by steinbock
+raw_count_policy: integer protein counts only (post-steinbock); raw TIFF/CSV are not AnnData-ready.
+fetch_mode: manifest_script
 raw_data_location: data/raw/brca_imc_kuett_2022/
 processed_data_location: data/processed/brca_imc_kuett_2022/
 anndata_schema_name: aether_3d_serial_slice
