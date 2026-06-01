@@ -54,5 +54,5 @@ Re-run with:
 
 ```bash
 conda run --no-capture-output -n dl python scripts/benchmark/run_synthetic_sweep.py
-conda run --no-capture-output -n dl python scripts/benchmark/make_plots.py
+# TODO(ref-parity): make_plots.py removed; regenerate plots after real results
 ```

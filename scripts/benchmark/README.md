@@ -8,7 +8,7 @@ for every refined model variant.
 
 ```bash
 conda run --no-capture-output -n dl python scripts/benchmark/run_synthetic_sweep.py
-conda run --no-capture-output -n dl python scripts/benchmark/make_plots.py
+# TODO(ref-parity): make_plots.py removed; regenerate plots after real results
 ```
 
 Raw JSON + reconstructed `.h5ad`s land in `results/benchmark/` (git-ignored).
