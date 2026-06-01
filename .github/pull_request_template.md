@@ -33,3 +33,9 @@
 
 ## Notes
 <!-- Anything reviewers should know -->
+
+## Related issues
+<!-- Use "Closes #N" if this PR fully resolves the issue (auto-closes on merge). -->
+<!-- Use "Refs #N" or "Part of #N" for partial work, roadmap tracking, or issues that must stay open. -->
+- Closes #
+- Refs #
