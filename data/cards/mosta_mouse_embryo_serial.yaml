@@ -21,6 +21,6 @@ preprocessing_command: python scripts/data/fetch_aether_datasets.py --dataset mo
 split_strategy: virtual_slice_holdout_by_physical_z
 split_seed: 20260529
 created_at_utc: '2026-05-29T00:00:00Z'
-file_size_bytes_or_manifest: per-section .h5ad files (E16.5: 13 serial sagittal sections; 53 total)
+file_size_bytes_or_manifest: 'per-section .h5ad files (E16.5: 13 serial sagittal sections; 53 total)'
 content_hash_or_manifest_hash: pending_download_manifest_hash
 derived_figures_or_metrics: [A-F2, A-F4]
