@@ -12,8 +12,8 @@ section cannot define the cross-slice trajectories the model trains on
 This guide selects the audited, verified datasets from the canonical
 `ST_research/datasets/DATASET_REGISTRY.md` (2026-05-28 audit) that best satisfy
 Aether3D's serial / stacked-slice requirement, and maps each onto the existing
-`aether_3d_serial_slice` AnnData contract. It complements
-[`docs/DATA.md`](./DATA.md), which documents the Python-native plug-and-play
+`aether_3d_serial_slice` AnnData contract. It complements a planned companion
+guide for the Python-native plug-and-play
 serial picks (MERFISH hypothalamus, Visium breast cancer serial, MOSTA); the
 datasets below are the **larger audited registry recommendations** intended for
 scaled 3D-reconstruction experiments.
@@ -140,7 +140,7 @@ The 10x Visium HD pages (#4, #5) are verified, but prefer the
 
 ## Local resources
 
-- **Existing data guide:** [`docs/DATA.md`](./DATA.md) — Python-native serial
+- **Planned data guide:** `docs/DATA.md` (not yet written) — Python-native serial
   picks (MERFISH hypothalamus, Visium breast cancer serial, MOSTA) and the
   `aether_3d_serial_slice` schema contract that this guide reuses.
 - **Advanced/optional real-data path:** [`docs_brca_imc_real_data.md`](../docs_brca_imc_real_data.md)
