@@ -189,6 +189,5 @@ This report exercises those outputs on two data sources: a synthetic 3-slice tra
 
 Reproduce with (dl env required for the RTX 5090):
 
-```bash
-conda run --no-capture-output -n dl python scripts/visualize/biology_figures.py --mode all
-```
+<!-- TODO(ref-parity): biology_figures.py removed; regenerate after real results -->
+Figure generator removed (figures pending real-data results).
