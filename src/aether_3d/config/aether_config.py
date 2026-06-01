@@ -8,7 +8,7 @@ with a clean, validated, serializable config.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, ConfigDict
 
@@ -61,10 +61,17 @@ class Aether3DConfig(BaseModel):
     thickness: float = 10.0
     n_samples_volume: int = 200_000
 
+    # Optional 2nd–98th z-percentile outlier pruning of the assembled volume.
+    # Off by default: virtual z-planes are deterministic (z = d * thickness),
+    # so there are no genuine z "outliers" — enabling this can silently drop
+    # legitimate sparse endpoint planes (issue #81). When enabled, the number
+    # and z-values of dropped cells are logged via a warning.
+    prune_z_outliers: bool = False
+
     # Output
     output_dir: Path = Field(default=Path("results"))
 
-    def model_dump_for_checkpoint(self):
+    def model_dump_for_checkpoint(self) -> dict[str, Any]:
         d = self.model_dump()
         for k, v in d.items():
             if isinstance(v, Path):

@@ -19,6 +19,8 @@ from typing import Any
 
 import anndata as ad
 import numpy as np
+import numpy.typing as npt
+import pandas as pd
 import scanpy as sc
 
 from ..contract import VolumeAdapterInput, VolumeBaseAdapter
@@ -81,9 +83,13 @@ class InterpolAIAdapter(VolumeBaseAdapter):
                     "interpolai module does not expose interpolate() or a model class"
                 )
 
-            def _interp(frames, n_intermediate):
+            def _interp(
+                frames: npt.NDArray[np.float32], n_intermediate: int
+            ) -> npt.NDArray[np.float32]:
                 m = model_cls(device=self.device)
-                return m.interpolate(frames, n_intermediate=n_intermediate)
+                return np.asarray(
+                    m.interpolate(frames, n_intermediate=n_intermediate), dtype=np.float32
+                )
 
             interpolate = _interp
 
@@ -123,7 +129,7 @@ class InterpolAIAdapter(VolumeBaseAdapter):
         return sc.concat(out_slices, axis=0, join="outer")
 
 
-def _slice_to_grid(adata: ad.AnnData, spatial_key: str, grid_size: int) -> np.ndarray:
+def _slice_to_grid(adata: ad.AnnData, spatial_key: str, grid_size: int) -> npt.NDArray[np.float32]:
     """Render an ST slice as a (n_genes, H, W) gene grid via mean-pooled binning."""
     X = adata.X
     if hasattr(X, "toarray"):
@@ -141,7 +147,7 @@ def _slice_to_grid(adata: ad.AnnData, spatial_key: str, grid_size: int) -> np.nd
     iy = np.clip(((coords[:, 1] - ymin) / yr * (grid_size - 1)).astype(int), 0, grid_size - 1)
 
     grid = np.zeros((adata.n_vars, grid_size, grid_size), dtype=np.float32)
-    counts = np.zeros((grid_size, grid_size), dtype=np.float32)
+    counts: npt.NDArray[np.float32] = np.zeros((grid_size, grid_size), dtype=np.float32)
     for ci in range(coords.shape[0]):
         grid[:, iy[ci], ix[ci]] += X[ci]
         counts[iy[ci], ix[ci]] += 1.0
@@ -151,8 +157,8 @@ def _slice_to_grid(adata: ad.AnnData, spatial_key: str, grid_size: int) -> np.nd
 
 
 def _grid_to_slice(
-    grid: np.ndarray,
-    var_names,
+    grid: npt.NDArray[np.float32],
+    var_names: pd.Index,
     z_value: float,
     z_key: str,
     spatial_key: str,

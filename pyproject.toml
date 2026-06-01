@@ -31,21 +31,27 @@ classifiers = [
 
 dependencies = [
   "torch>=2.4",
-  "numpy>=1.26",
+  # >=2.2 guarantees the generic-ndarray (npt.NDArray) stubs CI's mypy relies on.
+  "numpy>=2.2",
   "pandas>=2.2",
   "anndata>=0.10",
   "scanpy>=1.10",
+  # Direct top-level import in aether_3d.data.trajectory_dataset
+  # (sklearn.preprocessing.LabelEncoder); declared explicitly so the package
+  # never relies on scanpy's transitive sklearn edge. See issue #119.
+  "scikit-learn>=1.3",
   "pydantic>=2.8",
   "tqdm",
   "einops",
   "torchdiffeq",
   "timm",
-  "pot",  # optional later
+  "pot",
   "pytorch-lightning>=2.0",
 ]
 
 [project.optional-dependencies]
-dev = ["pytest", "ruff", "mypy", "wandb"]
+# CI runs mypy 2.x; pin the major so local strict checks match CI exactly.
+dev = ["pytest", "ruff", "mypy>=2,<3", "wandb"]
 viz = ["plotly", "pyvista", "ipywidgets", "napari[all]"]
 
 [project.scripts]
@@ -68,6 +74,25 @@ ignore = ["E702", "E402"]
 
 [tool.mypy]
 strict = true
+
+# Third-party scientific libraries that ship no type stubs / py.typed marker.
+# Listed explicitly (no blanket global ignore) so new untyped imports still surface.
+# See issue #62 for the incremental strict-mypy paydown plan.
+[[tool.mypy.overrides]]
+module = [
+  "anndata",
+  "scanpy",
+  "ot",
+  "torchdiffeq",
+  "pandas",
+  "pandas.*",
+  "scipy.*",
+  "sklearn.*",
+  "plotly",
+  "plotly.*",
+  "pyvista",
+]
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 pythonpath = ["src", "."]

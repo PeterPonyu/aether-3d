@@ -23,11 +23,12 @@ from typing import Any, Optional, Sequence
 
 import anndata as ad
 import numpy as np
+import numpy.typing as npt
 
 
 def sliced_wasserstein_2d(
-    a: np.ndarray,
-    b: np.ndarray,
+    a: npt.NDArray[np.floating[Any]],
+    b: npt.NDArray[np.floating[Any]],
     n_projections: int = 50,
     seed: int = 0,
 ) -> float:
@@ -44,12 +45,12 @@ def sliced_wasserstein_2d(
     rng = np.random.default_rng(seed)
     dists: list[float] = []
     try:
-        from scipy.stats import wasserstein_distance  # type: ignore
+        from scipy.stats import wasserstein_distance
 
-        def _w1d(x: np.ndarray, y: np.ndarray) -> float:
+        def _w1d(x: npt.NDArray[np.floating[Any]], y: npt.NDArray[np.floating[Any]]) -> float:
             return float(wasserstein_distance(x, y))
     except ImportError:
-        def _w1d(x: np.ndarray, y: np.ndarray) -> float:
+        def _w1d(x: npt.NDArray[np.floating[Any]], y: npt.NDArray[np.floating[Any]]) -> float:
             xs = np.sort(x)
             ys = np.sort(y)
             n = max(len(xs), len(ys))
@@ -67,10 +68,10 @@ def sliced_wasserstein_2d(
 
 
 def morans_i_per_gene(
-    X: np.ndarray,
-    coords: np.ndarray,
+    X: npt.NDArray[np.float32],
+    coords: npt.NDArray[np.float32],
     k: int = 6,
-) -> np.ndarray:
+) -> npt.NDArray[np.float32]:
     """Per-gene Moran's I using a sparse k-NN binary spatial weight matrix.
 
     Returns an array of shape (n_genes,). NaN for genes with zero variance.
@@ -80,8 +81,8 @@ def morans_i_per_gene(
         return np.full(n_genes, np.nan, dtype=np.float32)
 
     try:
-        from scipy.sparse import csr_matrix  # type: ignore
-        from scipy.spatial import cKDTree  # type: ignore
+        from scipy.sparse import csr_matrix
+        from scipy.spatial import cKDTree
 
         _, idx = cKDTree(coords).query(coords, k=k + 1)
         knn_idx = np.asarray(idx[:, 1:], dtype=np.int64)
@@ -117,10 +118,10 @@ def morans_i_per_gene(
 
 
 def morans_i_agreement(
-    X_truth: np.ndarray,
-    coords_truth: np.ndarray,
-    X_recon: np.ndarray,
-    coords_recon: np.ndarray,
+    X_truth: npt.NDArray[np.float32],
+    coords_truth: npt.NDArray[np.float32],
+    X_recon: npt.NDArray[np.float32],
+    coords_recon: npt.NDArray[np.float32],
     top_k_hvg: int = 100,
     k: int = 6,
 ) -> float:
@@ -146,7 +147,7 @@ def morans_i_agreement(
     if mask.sum() < 3:
         return float("nan")
     try:
-        from scipy.stats import spearmanr  # type: ignore
+        from scipy.stats import spearmanr
 
         rho, _ = spearmanr(I_truth[mask], I_recon[mask])
         return float(rho) if not np.isnan(rho) else float("nan")
@@ -155,10 +156,10 @@ def morans_i_agreement(
 
 
 def domain_ari_nmi(
-    X_truth: np.ndarray,
-    X_recon: np.ndarray,
-    coords_truth: np.ndarray | None = None,
-    coords_recon: np.ndarray | None = None,
+    X_truth: npt.NDArray[np.float32],
+    X_recon: npt.NDArray[np.float32],
+    coords_truth: npt.NDArray[np.float32] | None = None,
+    coords_recon: npt.NDArray[np.float32] | None = None,
     n_clusters: int = 5,
     seed: int = 0,
 ) -> dict[str, Any]:
@@ -175,8 +176,8 @@ def domain_ari_nmi(
         return {"ari": float("nan"), "nmi": float("nan")}
 
     try:
-        from sklearn.cluster import KMeans  # type: ignore
-        from sklearn.metrics import (  # type: ignore
+        from sklearn.cluster import KMeans
+        from sklearn.metrics import (
             adjusted_mutual_info_score,
             adjusted_rand_score,
         )
@@ -185,7 +186,7 @@ def domain_ari_nmi(
 
     if coords_truth is not None and coords_recon is not None:
         try:
-            from scipy.spatial import cKDTree  # type: ignore
+            from scipy.spatial import cKDTree
 
             _, recon_idx = cKDTree(coords_recon).query(coords_truth, k=1)
             X_truth_cmp = X_truth
@@ -229,7 +230,7 @@ def celltype_proportion_spearman(
         return float("nan")
 
     try:
-        from scipy.stats import spearmanr  # type: ignore
+        from scipy.stats import spearmanr
 
         rho, _ = spearmanr(t_counts, r_counts)
         return float(rho) if not np.isnan(rho) else float("nan")
@@ -448,8 +449,117 @@ def geometry_quartet(
     return metrics
 
 
-def _spearman_fallback(a: np.ndarray, b: np.ndarray) -> float:
-    def _rank(x: np.ndarray) -> np.ndarray:
+def gene_pearson_fidelity(
+    X_recon: npt.NDArray[np.float32],
+    coords_recon: npt.NDArray[np.float32],
+    X_truth: npt.NDArray[np.float32],
+    coords_truth: npt.NDArray[np.float32],
+) -> dict[str, Any]:
+    """Bulk vs spatially-matched per-cell / per-gene gene-expression fidelity.
+
+    The historical headline "Gene Pearson" was the correlation of the two
+    slices' *bulk* (per-gene mean) expression profiles. That collapses each
+    slice to a single profile, so it is invariant to where cells are placed and
+    how individual cells are reconstructed — a mis-localized or near-constant
+    reconstruction can still score ~0.9 (issue #130). This helper returns that
+    bulk number *clearly labeled* alongside the spatially-matched per-cell and
+    per-gene Pearson / RMSE that actually reflect cell-level reconstruction
+    quality, so the bulk metric is never reported on its own.
+
+    Reconstructed cells are matched to truth cells by 1-NN over `spatial`
+    coordinates (mirrors the benchmark's NearestNeighbors pairing) before the
+    per-cell / per-gene correlations are computed.
+
+    Returns a dict with keys (all NaN on empty / degenerate input):
+      - ``bulk_slice_mean_pearson`` — bulk slice-mean profile correlation
+        (the old metric; insensitive to spatial layout).
+      - ``per_cell_gene_pearson`` — mean over cells of PCC across genes.
+      - ``per_gene_pearson`` — mean over genes of PCC across matched cells.
+      - ``per_cell_gene_rmse`` — RMSE on raw matched expression.
+    """
+    nan_result = {
+        "bulk_slice_mean_pearson": float("nan"),
+        "per_cell_gene_pearson": float("nan"),
+        "per_gene_pearson": float("nan"),
+        "per_cell_gene_rmse": float("nan"),
+    }
+    if X_recon.size == 0 or X_truth.size == 0:
+        return nan_result
+    if X_recon.shape[1] != X_truth.shape[1]:
+        raise ValueError(
+            f"recon and truth gene counts differ: "
+            f"{X_recon.shape[1]} vs {X_truth.shape[1]}"
+        )
+
+    Xr = np.asarray(X_recon, dtype=np.float64)
+    Xt = np.asarray(X_truth, dtype=np.float64)
+
+    # Bulk slice-mean profile correlation (the old "Gene Pearson").
+    bulk = _pearson_or_nan(Xr.mean(axis=0), Xt.mean(axis=0))
+
+    # Spatially match each recon cell to its nearest truth cell (1-NN).
+    matched = _nearest_neighbor_match(
+        np.asarray(coords_recon, dtype=np.float64),
+        np.asarray(coords_truth, dtype=np.float64),
+    )
+    Xt_matched = Xt[matched]
+
+    per_cell = [
+        p
+        for p in (_pearson_or_nan(Xr[i], Xt_matched[i]) for i in range(Xr.shape[0]))
+        if not np.isnan(p)
+    ]
+    per_gene = [
+        p
+        for p in (_pearson_or_nan(Xr[:, g], Xt_matched[:, g]) for g in range(Xr.shape[1]))
+        if not np.isnan(p)
+    ]
+
+    return {
+        "bulk_slice_mean_pearson": bulk,
+        "per_cell_gene_pearson": float(np.mean(per_cell)) if per_cell else float("nan"),
+        "per_gene_pearson": float(np.mean(per_gene)) if per_gene else float("nan"),
+        "per_cell_gene_rmse": float(np.sqrt(np.mean((Xr - Xt_matched) ** 2))),
+    }
+
+
+def _nearest_neighbor_match(
+    coords_recon: npt.NDArray[np.float64],
+    coords_truth: npt.NDArray[np.float64],
+) -> npt.NDArray[np.int64]:
+    """For each recon cell, the index of its nearest truth cell (1-NN)."""
+    try:
+        from scipy.spatial import cKDTree
+
+        _, idx = cKDTree(coords_truth).query(coords_recon, k=1)
+        return np.asarray(idx, dtype=np.int64).reshape(-1)
+    except ImportError:
+        diff = coords_recon[:, None, :] - coords_truth[None, :, :]
+        sq = (diff * diff).sum(axis=-1)
+        return np.asarray(sq.argmin(axis=1), dtype=np.int64)
+
+
+def _pearson_or_nan(
+    a: npt.NDArray[np.floating[Any]], b: npt.NDArray[np.floating[Any]]
+) -> float:
+    """Pearson correlation; NaN when either side is constant or too short."""
+    if a.shape != b.shape or a.size < 2:
+        return float("nan")
+    if np.std(a) < 1e-12 or np.std(b) < 1e-12:
+        return float("nan")
+    try:
+        from scipy.stats import pearsonr
+
+        r, _ = pearsonr(a, b)
+        return float(r) if not np.isnan(r) else float("nan")
+    except ImportError:
+        return float(np.corrcoef(a, b)[0, 1])
+
+
+def _spearman_fallback(
+    a: npt.NDArray[np.floating[Any]], b: npt.NDArray[np.floating[Any]]
+) -> float:
+    def _rank(x: npt.NDArray[np.floating[Any]]) -> npt.NDArray[np.float64]:
         order = np.argsort(x)
         ranks = np.empty_like(order, dtype=np.float64)
         ranks[order] = np.arange(len(x))
@@ -463,7 +573,7 @@ def _spearman_fallback(a: np.ndarray, b: np.ndarray) -> float:
 def _aligned_label_counts(
     truth_labels: Sequence[Any],
     recon_labels: Sequence[Any],
-) -> tuple[np.ndarray, np.ndarray]:
+) -> tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]:
     truth_values, truth_counts = np.unique(np.asarray(truth_labels, dtype=str), return_counts=True)
     recon_values, recon_counts = np.unique(np.asarray(recon_labels, dtype=str), return_counts=True)
     all_labels = np.union1d(truth_values, recon_values)

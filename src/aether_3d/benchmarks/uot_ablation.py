@@ -13,9 +13,10 @@ hybrid-cost weighting choices.
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
-from typing import Sequence
+from typing import Any, Sequence
 
 import numpy as np
+import numpy.typing as npt
 
 from ..coupling.uot import compute_hybrid_cost, compute_uot_coupling
 
@@ -36,7 +37,7 @@ class UOTAblationResult:
     mean_true_pair_mass: float  # average P[i, true_j[i]] under row-normalized soft coupling
     runtime_s: float
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         d = asdict(self)
         d["point"] = asdict(self.point)
         return d
@@ -49,7 +50,11 @@ def make_paired_slices(
     spatial_noise: float = 1.0,
     gene_noise: float = 0.1,
     seed: int = 0,
-) -> tuple[dict, dict, np.ndarray]:
+) -> tuple[
+    dict[str, npt.NDArray[np.float32]],
+    dict[str, npt.NDArray[np.float32]],
+    npt.NDArray[np.int64],
+]:
     """Build two synthetic slices where slice 1 is a noisy copy of slice 0.
 
     Returns (slice0, slice1, true_permutation) where true_permutation[i] is the
@@ -83,8 +88,8 @@ def make_paired_slices(
 
 
 def score_coupling(
-    P: np.ndarray,
-    true_permutation: np.ndarray,
+    P: npt.NDArray[Any],
+    true_permutation: npt.NDArray[np.int64],
 ) -> dict[str, float]:
     """Score a soft coupling matrix P against the known ground-truth pairing.
 
@@ -144,10 +149,19 @@ def run_uot_ablation(
             lambda_class=point.lambda_class,
         )
 
-        # Solve UOT on the resulting cost matrix
-        np.random.seed(point.seed)
+        # Solve UOT on the resulting cost matrix.  ``compute_uot_coupling``
+        # constructs its own ``np.random.default_rng()`` when ``rng`` is None,
+        # and that does NOT read the legacy ``np.random.seed`` state — so the
+        # previous ``np.random.seed(point.seed)`` call left the ablation
+        # nondeterministic across runs.  Pass an explicit, point-seeded
+        # Generator instead.  See issue #118.
+        ablation_rng = np.random.default_rng(point.seed)
         src, tgt, weights = compute_uot_coupling(
-            cost, reg=uot_reg, tau=uot_tau, n_samples=uot_samples,
+            cost,
+            reg=uot_reg,
+            tau=uot_tau,
+            n_samples=uot_samples,
+            rng=ablation_rng,
         )
 
         # Reconstruct soft P from sampled pairs
@@ -168,7 +182,7 @@ def run_uot_ablation(
     return out
 
 
-def aggregate_ablation(results: Sequence[UOTAblationResult]) -> dict:
+def aggregate_ablation(results: Sequence[UOTAblationResult]) -> dict[str, Any]:
     """JSON-serializable aggregation for the heatmap figure."""
     return {
         "schema_version": "1",

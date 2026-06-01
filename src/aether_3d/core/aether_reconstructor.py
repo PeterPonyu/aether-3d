@@ -8,10 +8,12 @@ It mirrors the role of LuminaImputer but for serial slice → continuous 3D volu
 from __future__ import annotations
 
 import random
-from typing import List
+import warnings
+from typing import Any, Callable, List
 
 import anndata as ad
 import numpy as np
+import numpy.typing as npt
 import pytorch_lightning as pl
 import scanpy as sc
 import torch
@@ -44,11 +46,11 @@ class AetherReconstructor:
 
     def __init__(self, config: Aether3DConfig):
         self.cfg = config
-        self.model = None
-        self.dataset = None
+        self.model: MultiModalVelocityField | None = None
+        self.dataset: SerialSliceTrajectoryDataset | None = None
         self._rng = np.random.default_rng(config.seed)
 
-    def setup_data(self, adata_list: List[ad.AnnData]):
+    def setup_data(self, adata_list: List[ad.AnnData]) -> None:
         pl.seed_everything(self.cfg.seed, workers=True)
         self.dataset = SerialSliceTrajectoryDataset(adata_list, self.cfg)
         # Infer dims
@@ -67,7 +69,7 @@ class AetherReconstructor:
             num_heads=self.cfg.num_heads,
         )
 
-    def fit(self, trainer: pl.Trainer | None = None, **kwargs):
+    def fit(self, trainer: pl.Trainer | None = None, **kwargs: Any) -> pl.Trainer:
         if self.dataset is None:
             raise RuntimeError("Call setup_data first")
         model = self.model
@@ -89,11 +91,12 @@ class AetherReconstructor:
         self.module = AetherFlowModule(self.cfg, model)
 
         if trainer is None:
-            trainer = pl.Trainer(
-                max_epochs=self.cfg.max_epochs,
-                default_root_dir=str(self.cfg.output_dir),
-                **kwargs,
-            )
+            # User-supplied kwargs (e.g. README's `fit(max_epochs=100)`) take
+            # precedence over cfg defaults; setdefault avoids the duplicate
+            # `max_epochs` TypeError reported in issues #115 and #80.
+            kwargs.setdefault("max_epochs", self.cfg.max_epochs)
+            kwargs.setdefault("default_root_dir", str(self.cfg.output_dir))
+            trainer = pl.Trainer(**kwargs)
 
         trainer.fit(self.module, train_dataloaders=loader)
         self.model = self.module.model
@@ -123,6 +126,14 @@ class AetherReconstructor:
         if self.model is None:
             raise RuntimeError(
                 "Call setup_data first. Training/fit is recommended but not strictly required for demo."
+            )
+
+        if num_depths < 2:
+            raise ValueError(
+                f"num_depths must be >= 2 (depths define the interior virtual "
+                f"planes between slices via linspace(0, 1, num_depths)); got "
+                f"{num_depths}. num_depths=0 yields an empty volume and "
+                f"num_depths=1 a degenerate single-plane volume."
             )
 
         thickness = thickness or self.cfg.thickness
@@ -176,6 +187,17 @@ class AetherReconstructor:
                 self._get_onehot(ad1, idx_all1), dtype=torch.float32, device=model_device
             )
 
+            # Per-cell z coordinates — same source as SerialSliceTrajectoryDataset
+            # so that the inference state matches training inputs (issue #82).
+            z0_all = torch.tensor(
+                np.asarray(ad0.obs[self.cfg.z_key].values, dtype=np.float32).reshape(-1, 1),
+                device=model_device,
+            )
+            z1_all = torch.tensor(
+                np.asarray(ad1.obs[self.cfg.z_key].values, dtype=np.float32).reshape(-1, 1),
+                device=model_device,
+            )
+
             # UOT-based cell pairing: hybrid cost (spatial + gene cosine + class)
             cost = compute_hybrid_cost(x0_all, g0_all, c0_all, x1_all, g1_all, c1_all)
             torch_generator = torch.Generator(device=cost.device).manual_seed(
@@ -191,6 +213,9 @@ class AetherReconstructor:
             src_np = (
                 src_idx.cpu().numpy() if isinstance(src_idx, torch.Tensor) else src_idx
             )
+            tgt_np = (
+                tgt_idx.cpu().numpy() if isinstance(tgt_idx, torch.Tensor) else tgt_idx
+            )
             w_np = (
                 weights.cpu().numpy() if isinstance(weights, torch.Tensor) else weights
             )
@@ -201,13 +226,35 @@ class AetherReconstructor:
 
             n_available = len(src_np)
 
-            # ODE drift factory: wraps the velocity field as dx/dt = v(state, t, y)
-            def make_drift(class_cond):
-                def drift_fn(concat_state, t_vals):
+            # ODE drift factory: wraps the velocity field as dx/dt = v(state, t, y).
+            # z_start / delta_z thread the same z conditioning the training-time
+            # SerialSliceTrajectoryDataset emits (issue #82). The training path
+            # interpolates z linearly across t in [0, 1]; we mirror that here so
+            # the model sees identical z / delta_z statistics at inference.
+            def make_drift(
+                class_cond: torch.Tensor,
+                z_start: torch.Tensor,
+                delta_z: torch.Tensor,
+            ) -> Callable[[torch.Tensor, torch.Tensor], torch.Tensor]:
+                def drift_fn(
+                    concat_state: torch.Tensor, t_vals: torch.Tensor
+                ) -> torch.Tensor:
                     x_part = concat_state[:, :spatial_dim]
                     g_part = concat_state[:, spatial_dim : spatial_dim + gene_dim]
                     c_part = concat_state[:, spatial_dim + gene_dim :]
-                    state = {"x": x_part, "g": g_part, "c": c_part}
+                    # Broadcast scalar/per-sample t to the per-sample z shape.
+                    t_b = t_vals.reshape(-1)
+                    if t_b.numel() == 1:
+                        zt = z_start + t_b * delta_z
+                    else:
+                        zt = z_start + t_b.view(-1, 1) * delta_z
+                    state = {
+                        "x": x_part,
+                        "g": g_part,
+                        "c": c_part,
+                        "z": zt,
+                        "delta_z": delta_z,
+                    }
                     with torch.no_grad():
                         vel = model(state, t_vals, class_cond)
                     return torch.cat([vel["vx"], vel["vg"], vel["vc"]], dim=1)
@@ -238,9 +285,13 @@ class AetherReconstructor:
                     )
 
                 s0 = src_np[chosen]
+                t1 = tgt_np[chosen]
                 x_start = x0_all[s0]
                 g_start = g0_all[s0]
                 c_start = c0_all[s0]
+                z_start = z0_all[s0]
+                z_end = z1_all[t1]
+                delta_z = z_end - z_start
 
                 n_current = x_start.shape[0]
                 # ODE integration from t=0 to t=d using adaptive dopri5 solver.
@@ -248,7 +299,7 @@ class AetherReconstructor:
                 # no longer needs a caller-side branch.
                 concat_start = torch.cat([x_start, g_start, c_start], dim=1)
                 integrator = ode(
-                    drift=make_drift(c_start),
+                    drift=make_drift(c_start, z_start, delta_z),
                     t0=0.0,
                     t1=float(d),
                     solver_type="dopri5",
@@ -258,6 +309,12 @@ class AetherReconstructor:
                 new_x = concat_end[:, :spatial_dim]
                 new_g = concat_end[:, spatial_dim : spatial_dim + gene_dim]
                 new_c = torch.softmax(concat_end[:, spatial_dim + gene_dim :], dim=-1)
+
+                # Net spatial flow each virtual cell underwent under the velocity
+                # field over the depth interval [0, d]: dx = x(d) - x(0). This is
+                # the per-cell velocity the reconstructor's ODE integrated, kept
+                # for downstream flow-divergence + anisotropy diagnostics.
+                spatial_velocity = (new_x - x_start).detach().cpu().numpy()
 
                 z_val = z_offset + d * thickness
                 z_arr = np.full((n_current, 1), z_val)
@@ -277,6 +334,8 @@ class AetherReconstructor:
                 )
                 # Store predicted class probabilities
                 layer_adata.obsm["cell_class_vel"] = new_c.detach().cpu().numpy()
+                # Store the integrated spatial flow (per-cell velocity).
+                layer_adata.obsm["velocity"] = spatial_velocity
                 all_cells.append(layer_adata)
 
             # Each adjacent-slice interval includes both endpoints; advance by
@@ -287,18 +346,37 @@ class AetherReconstructor:
         # Concatenate everything
         volume = sc.concat(all_cells, axis=0, join="outer")
 
-        # Very light density pruning (remove extreme outliers in Z for demo)
-        z = volume.obs["z_3d"].values
-        z_min, z_max = np.percentile(z, [2, 98])
-        keep = (z >= z_min) & (z <= z_max)
-        volume = volume[keep].copy()
+        # Optional 2nd–98th z-percentile outlier pruning (opt-in via config).
+        # Virtual z-planes are deterministic (z = d * thickness), so there are
+        # no genuine z "outliers"; an unconditional percentile clip silently
+        # deletes whichever planes carry the fewest cells — typically the
+        # sparse endpoint slices — and that may be exactly the held-out plane
+        # the caller wants to score (issue #81). Off by default; when enabled,
+        # report how many cells and which z-planes were removed.
+        if self.cfg.prune_z_outliers:
+            z = volume.obs["z_3d"].values
+            z_min, z_max = np.percentile(z, [2, 98])
+            keep = (z >= z_min) & (z <= z_max)
+            n_dropped = int((~keep).sum())
+            if n_dropped:
+                dropped_z = sorted(set(np.round(z[~keep].astype(float), 6).tolist()))
+                warnings.warn(
+                    f"prune_z_outliers dropped {n_dropped} virtual cells outside "
+                    f"the 2nd–98th z-percentile [{z_min:.4g}, {z_max:.4g}]; "
+                    f"removed z-planes: {dropped_z}",
+                    RuntimeWarning,
+                    stacklevel=2,
+                )
+            volume = volume[keep].copy()
 
         print(
             f"  Reconstructed volume has {volume.n_obs} virtual cells across {len(adata_list) - 1} intervals."
         )
         return volume
 
-    def _get_onehot(self, adata, indices):
+    def _get_onehot(
+        self, adata: ad.AnnData, indices: npt.NDArray[np.int64]
+    ) -> npt.NDArray[np.float32]:
         """Helper to get one-hot cell classes."""
         labels = adata.obs[self.cfg.label_key].iloc[indices].astype(str).values
         if self.dataset is not None and hasattr(self.dataset, "label_encoder"):

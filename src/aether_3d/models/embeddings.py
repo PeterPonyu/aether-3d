@@ -12,6 +12,7 @@ All code is newly written; only the mathematical ideas are inspired by DiT-style
 from __future__ import annotations
 
 import math
+from typing import cast
 
 import torch
 import torch.nn as nn
@@ -45,7 +46,7 @@ class TimestepEmbedder(nn.Module):
     def forward(self, t: torch.Tensor) -> torch.Tensor:
         t_freq = self.timestep_embedding(t, self.frequency_embedding_size)
         t_emb = self.mlp(t_freq)
-        return t_emb
+        return cast(torch.Tensor, t_emb)
 
 
 class LabelEmbedder(nn.Module):
@@ -70,7 +71,7 @@ class LabelEmbedder(nn.Module):
         use_dropout = self.dropout_prob > 0
         if (train and use_dropout) or (force_drop_ids is not None):
             labels = self.token_drop(labels, force_drop_ids)
-        return self.embedding_table(labels)
+        return cast(torch.Tensor, self.embedding_table(labels))
 
 
 class PatchEmbedder(nn.Module):

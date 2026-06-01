@@ -8,9 +8,10 @@ unbalanced Sinkhorn solver in PyTorch, with backward compatible NumPy CPU fallba
 from __future__ import annotations
 
 import warnings
-from typing import Tuple
+from typing import Any, Tuple, cast
 
 import numpy as np
+import numpy.typing as npt
 import torch
 
 try:
@@ -21,16 +22,23 @@ except ImportError:
     ot = None
 
 
+# Default RNG seed used when callers do not supply ``rng``/``torch_generator``
+# to ``compute_uot_coupling``/``compute_uot_coupling_pytorch``. Documented so
+# that the default sampling path is reproducible across calls. Override by
+# passing an explicit generator.
+_DEFAULT_UOT_RNG_SEED = 0
+
+
 def compute_hybrid_cost(
-    x0: np.ndarray | torch.Tensor,
-    g0: np.ndarray | torch.Tensor,
-    c0: np.ndarray | torch.Tensor,
-    x1: np.ndarray | torch.Tensor,
-    g1: np.ndarray | torch.Tensor,
-    c1: np.ndarray | torch.Tensor,
+    x0: npt.NDArray[Any] | torch.Tensor,
+    g0: npt.NDArray[Any] | torch.Tensor,
+    c0: npt.NDArray[Any] | torch.Tensor,
+    x1: npt.NDArray[Any] | torch.Tensor,
+    g1: npt.NDArray[Any] | torch.Tensor,
+    c1: npt.NDArray[Any] | torch.Tensor,
     alpha_spatial: float = 0.5,
     lambda_class: float = 10.0,
-) -> np.ndarray | torch.Tensor:
+) -> npt.NDArray[Any] | torch.Tensor:
     """
     Hybrid cost matrix for UOT between two slices.
 
@@ -44,8 +52,17 @@ def compute_hybrid_cost(
     Supports both NumPy arrays and PyTorch Tensors.
     """
     if isinstance(x0, torch.Tensor):
+        # By contract all six inputs share a backend; isinstance narrows x0
+        # only, so cast the rest to satisfy the all-Tensor PyTorch overload.
         return compute_hybrid_cost_pytorch(
-            x0, g0, c0, x1, g1, c1, alpha_spatial, lambda_class
+            x0,
+            cast(torch.Tensor, g0),
+            cast(torch.Tensor, c0),
+            cast(torch.Tensor, x1),
+            cast(torch.Tensor, g1),
+            cast(torch.Tensor, c1),
+            alpha_spatial,
+            lambda_class,
         )
 
     eps = 1e-9
@@ -73,7 +90,7 @@ def compute_hybrid_cost(
     cost_class = np.clip(1.0 - np.dot(c0, c1.T), 0, 1) * lambda_class
 
     C = alpha_spatial * cost_spatial + (1 - alpha_spatial) * cost_gene + cost_class
-    return C
+    return np.asarray(C)
 
 
 def compute_hybrid_cost_pytorch(
@@ -111,16 +128,25 @@ def compute_hybrid_cost_pytorch(
 
 
 def compute_uot_coupling(
-    cost: np.ndarray | torch.Tensor,
+    cost: npt.NDArray[Any] | torch.Tensor,
     reg: float = 0.8,
     tau: float = 0.05,
     n_samples: int = 50000,
     rng: np.random.Generator | None = None,
     torch_generator: torch.Generator | None = None,
-) -> Tuple[np.ndarray | torch.Tensor, np.ndarray | torch.Tensor, np.ndarray | torch.Tensor]:
+) -> Tuple[
+    npt.NDArray[Any] | torch.Tensor,
+    npt.NDArray[Any] | torch.Tensor,
+    npt.NDArray[Any] | torch.Tensor,
+]:
     """
     Unbalanced OT coupling using unbalanced Sinkhorn.
     Automatically routes to GPU solver if cost is a PyTorch tensor, otherwise uses POT on CPU.
+
+    Reproducibility: when ``rng`` is ``None``, this function falls back to a
+    deterministic ``np.random.default_rng(_DEFAULT_UOT_RNG_SEED)`` so that the
+    public default path produces the same coupling across calls. Pass an
+    explicit ``rng`` for application-controlled streams.
     """
     if isinstance(cost, torch.Tensor):
         return compute_uot_coupling_pytorch(
@@ -130,7 +156,8 @@ def compute_uot_coupling(
     n0, n1 = cost.shape
     if n0 == 0 or n1 == 0:
         raise ValueError(f"UOT coupling requires non-empty cost axes; got {cost.shape}")
-    rng = rng or np.random.default_rng()
+    if rng is None:
+        rng = np.random.default_rng(_DEFAULT_UOT_RNG_SEED)
 
     if not _HAS_POT:
         warnings.warn(
@@ -154,13 +181,107 @@ def compute_uot_coupling(
     P = ot.sinkhorn_unbalanced(a, b, cost, reg, tau)
 
     flat_P = P.ravel()
-    flat_P = flat_P / flat_P.sum()
+    # Mirror the torch branch (see compute_uot_coupling_pytorch): when the
+    # unbalanced Sinkhorn coupling collapses to all-zero mass (extreme costs
+    # / very small reg), fall back to a uniform distribution rather than
+    # propagating NaN into rng.choice.  See issue #84.
+    flat_P_sum = flat_P.sum()
+    if flat_P_sum > 0:
+        flat_P = flat_P / flat_P_sum
+    else:
+        flat_P = np.full_like(flat_P, 1.0 / flat_P.size)
     idx = rng.choice(n0 * n1, size=n_samples, p=flat_P)
 
     src = idx // n1
     tgt = idx % n1
     weights = flat_P[idx]
     return src, tgt, weights
+
+
+def compute_uot_plan_pytorch(
+    cost: torch.Tensor,
+    reg: float = 0.8,
+    tau: float = 0.05,
+    max_iter: int = 1000,
+    tol: float = 1e-6,
+) -> torch.Tensor:
+    """Solve the unbalanced Sinkhorn UOT and return the *normalized* transport
+    plan ``P`` (``P.sum() == 1``) of shape ``(n0, n1)``.
+
+    Mathematical parity with POT's ``ot.sinkhorn_unbalanced`` on the normalized
+    plan. The solve runs in the log domain (see below) so it stays finite in
+    the small-``reg`` / large-cost regimes where the exp-domain recursion
+    collapses.
+    """
+    n0, n1 = cost.shape
+    if n0 == 0 or n1 == 0:
+        raise ValueError(f"UOT coupling requires non-empty cost axes; got {tuple(cost.shape)}")
+    device = cost.device
+    dtype = cost.dtype
+
+    # Log-domain stabilized unbalanced Sinkhorn.
+    #
+    # The exp-domain recursion u=(a/Kv)^fi with K=exp(-cost/reg)*(a*b) underflows
+    # whenever -cost/reg is strongly negative (small reg, or the lambda_class=10
+    # term added to a normalized cost): the kernel rounds to 0 and the plan
+    # silently collapses to ~uniform. We instead keep the dual potentials in log
+    # space and combine the log-kernel with torch.logsumexp, which is invariant
+    # to a per-row/column constant shift and so never underflows. This replaces
+    # the float64 promotion band-aid from issue #23 (issue #134).
+    #
+    # Mapping to the exp-domain form: with log_u=log(u), log_v=log(v) and
+    # M = -cost/reg, log_a = log(a), log_b = log(b),
+    #   K = exp(M) * (a * b),   u = (a / (K v))^fi
+    # becomes the logsumexp updates below. The final transport plan
+    # P = u * K * v is recovered as exp(log P); only the *normalized* plan is
+    # used downstream (sampling + weights), so we subtract max(log P) before the
+    # single exponentiation to keep it finite in float32.
+    log_a = torch.full((n0,), -float(np.log(n0)), device=device, dtype=dtype)
+    log_b = torch.full((n1,), -float(np.log(n1)), device=device, dtype=dtype)
+    log_K = -cost / reg  # log of the cost kernel, excluding the a*b prefactor
+    fi = tau / (tau + reg)
+
+    log_u = torch.zeros(n0, device=device, dtype=dtype)
+    log_v = torch.zeros(n1, device=device, dtype=dtype)
+
+    for i in range(max_iter):
+        log_u_prev = log_u.clone()
+        log_v_prev = log_v.clone()
+
+        # log(K v) = log_a_i + logsumexp_j(log_K_ij + log_b_j + log_v_j)
+        log_u = -fi * torch.logsumexp(
+            log_K + (log_b + log_v).unsqueeze(0), dim=1
+        )
+        # log(K^T u) = log_b_j + logsumexp_i(log_K_ij + log_a_i + log_u_i)
+        log_v = -fi * torch.logsumexp(
+            log_K + (log_a + log_u).unsqueeze(1), dim=0
+        )
+
+        # Converge check (absolute change in the log potentials)
+        err_u = torch.max(torch.abs(log_u - log_u_prev))
+        err_v = torch.max(torch.abs(log_v - log_v_prev))
+        err = 0.5 * (err_u + err_v)
+        if err < tol:
+            break
+
+    log_P = (
+        log_u.unsqueeze(1)
+        + log_K
+        + log_a.unsqueeze(1)
+        + log_b.unsqueeze(0)
+        + log_v.unsqueeze(0)
+    )
+    # Shift before exponentiating: a global constant cancels under the
+    # normalization below, so this only guards the final exp from underflow.
+    log_P = log_P - log_P.max()
+    P = torch.exp(log_P)
+
+    total = P.sum()
+    if total > 0:
+        P = P / total
+    else:  # pragma: no cover - the max-shift above keeps at least one entry == 1
+        P = torch.ones_like(P) / P.numel()
+    return P
 
 
 def compute_uot_coupling_pytorch(
@@ -174,62 +295,23 @@ def compute_uot_coupling_pytorch(
 ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """
     Unbalanced OT coupling solver on GPU/CPU in PyTorch.
-    Mathematical parity with POT's sinkhorn_unbalanced.
+    Solves the log-domain stabilized unbalanced Sinkhorn (mathematical parity
+    with POT's sinkhorn_unbalanced) and samples ``n_samples`` cell pairs from
+    the resulting normalized transport plan.
+
+    Reproducibility: when ``generator`` is ``None``, this function falls back
+    to a deterministic ``torch.Generator`` seeded from
+    ``_DEFAULT_UOT_RNG_SEED`` so that the default sampling path is
+    reproducible. Pass an explicit ``generator`` for application-controlled
+    streams.
     """
-    n0, n1 = cost.shape
-    if n0 == 0 or n1 == 0:
-        raise ValueError(f"UOT coupling requires non-empty cost axes; got {tuple(cost.shape)}")
+    n1 = cost.shape[1]
     device = cost.device
-    dtype = cost.dtype
-    solver_cost = cost
-    if cost.dtype in (torch.float16, torch.bfloat16, torch.float32):
-        underflow_fraction = torch.mean(((-cost / reg) < -80).float()).item()
-        if underflow_fraction > 0:
-            warnings.warn(
-                "compute_uot_coupling_pytorch detected Sinkhorn kernel underflow risk; "
-                "solving in float64 for numerical stability.",
-                RuntimeWarning,
-                stacklevel=2,
-            )
-            solver_cost = cost.to(torch.float64)
-            dtype = solver_cost.dtype
-
-    a_t = torch.ones(n0, device=device, dtype=dtype) / n0
-    b_t = torch.ones(n1, device=device, dtype=dtype) / n1
-
-    # In POT, K = exp(-cost / reg) * (a * b).  Promote underflow-prone
-    # fp32 inputs to float64 above so lower-reg OT does not silently collapse.
-    K = torch.exp(-solver_cost / reg) * (a_t.unsqueeze(1) * b_t.unsqueeze(0))
-
-    u = torch.ones(n0, device=device, dtype=dtype)
-    v = torch.ones(n1, device=device, dtype=dtype)
-    fi = tau / (tau + reg)
-
-    for i in range(max_iter):
-        uprev = u.clone()
-        vprev = v.clone()
-
-        Kv = torch.matmul(K, v)
-        u = (a_t / torch.clamp(Kv, min=1e-12)) ** fi
-        Ktu = torch.matmul(K.T, u)
-        v = (b_t / torch.clamp(Ktu, min=1e-12)) ** fi
-
-        # Converge check
-        err_u = torch.max(torch.abs(u - uprev)) / max(torch.max(torch.abs(u)), torch.max(torch.abs(uprev)), 1.0)
-        err_v = torch.max(torch.abs(v - vprev)) / max(torch.max(torch.abs(v)), torch.max(torch.abs(vprev)), 1.0)
-        err = 0.5 * (err_u + err_v)
-        if err < tol:
-            break
-
-    P = u.unsqueeze(1) * K * v.unsqueeze(0)
-
-    # Sample pairs
-    flat_P = P.view(-1)
-    flat_P_sum = flat_P.sum()
-    if flat_P_sum > 0:
-        flat_P = flat_P / flat_P_sum
-    else:
-        flat_P = torch.ones_like(flat_P) / flat_P.numel()
+    if generator is None:
+        generator = torch.Generator(device=device).manual_seed(_DEFAULT_UOT_RNG_SEED)
+    # Log-domain stabilized solve (issue #134) returns the normalized plan and
+    # validates non-empty cost axes; supersedes the issue #23 float64 band-aid.
+    flat_P = compute_uot_plan_pytorch(cost, reg, tau, max_iter, tol).view(-1)
 
     idx = torch.multinomial(
         flat_P, num_samples=n_samples, replacement=True, generator=generator
