@@ -1,0 +1,26 @@
+data_card_id: starmap_plus_mouse_cns_3d
+project: Aether3D
+dataset_name: STARmap PLUS adult mouse CNS 3D volumetric atlas
+platform: STARmap PLUS (in-situ sequencing), 1022-gene panel, 3D voxels 194 x 194 x 345 nm
+issue_ref: '#74'
+source_url_or_accession: https://gene.ai.tencent.com/SpatialOmics/
+url_status: unverified
+license_or_access_constraints: Obtain raw cell-by-gene matrices + 3D coords from SODB / the paper's data-availability statement; exact direct hotlink UNVERIFIED. A formatted research copy is mirrored on Zenodo (records/8092024).
+contact_or_citation: Shi, He, Zhou et al. 2023, Spatial atlas of the mouse central nervous system at molecular resolution, Nature (PMC10709140); Spatial Omics DataBase (SODB).
+serial_slice_fit: native 3D tissue volumes (multiple imaging planes per block) across CNS samples; bin the volume into ordered z-planes for a serial stack. Volumetric serial/3D expansion.
+contract_spatial: cell x/y (in-plane)
+contract_z_coord: cell z (native 3D depth) binned into ordered planes/sections
+contract_cell_class: provided molecular cell-type label
+contract_X: raw per-cell gene counts
+raw_count_policy: raw integer counts only — no normalized-only, WSI, FASTQ, or BAM artifacts.
+raw_data_location: data/raw/starmap_plus_mouse_cns_3d/
+processed_data_location: data/processed/starmap_plus_mouse_cns_3d/
+anndata_schema_name: aether_3d_serial_slice
+fetch_mode: unverified
+preprocessing_command: python scripts/data/fetch_aether_datasets.py --dataset starmap_plus_mouse_cns_3d --dry-run
+split_strategy: virtual_slice_holdout_by_physical_z
+split_seed: 20260529
+created_at_utc: '2026-05-29T00:00:00Z'
+file_size_bytes_or_manifest: multi-GB (~1.09M cells; SODB / Zenodo records/8092024)
+content_hash_or_manifest_hash: pending_download_manifest_hash
+derived_figures_or_metrics: [A-F2, A-F4]

@@ -1,0 +1,26 @@
+data_card_id: stereoseq_whole_mouse_brain_serial
+project: Aether3D
+dataset_name: Stereo-seq whole adult mouse brain serial coronal atlas
+platform: Stereo-seq (DNB-patterned array, sub-cellular resolution) + paired snRNA-seq reference
+issue_ref: '#75'
+source_url_or_accession: https://doi.org/10.12412/BSDC.1699433096.20001
+url_status: unverified
+license_or_access_constraints: Processed per-section objects via BSDC portal (DOI above); raw sequencing at CNGB CNSA CNP0003837 is FASTQ (out of policy). Resolve the real per-section raw integer count-matrix bundle (.gef / raw-count .h5ad) before ingestion — exact bundle UNVERIFIED.
+contact_or_citation: Zhang et al. 2025, Single-cell spatial transcriptomic atlas of the whole mouse brain, Neuron (S0896-6273(25)00133-3); preprint bioRxiv 2023.12.03.569501.
+serial_slice_fit: 123 annotated coronal sections, 10 um thick, cut at 100 um intervals, all from a SINGLE brain — dense physically-ordered serial coronal z-stack. Whole-transcriptome (29,655 genes) companion/upgrade to issue #71.
+contract_spatial: obsm['spatial'] (bin/cell-bin centers per section)
+contract_z_coord: coronal-section index x 100 um physical spacing (single-brain block, ordered)
+contract_cell_class: provided Allen-region / cluster annotation (308 clusters)
+contract_X: raw Stereo-seq counts (confirm raw integer counts, NOT normalized)
+raw_count_policy: raw integer counts only — no normalized-only, WSI, FASTQ, or BAM artifacts.
+raw_data_location: data/raw/stereoseq_whole_mouse_brain_serial/
+processed_data_location: data/processed/stereoseq_whole_mouse_brain_serial/
+anndata_schema_name: aether_3d_serial_slice
+fetch_mode: unverified
+preprocessing_command: python scripts/data/fetch_aether_datasets.py --dataset stereoseq_whole_mouse_brain_serial --dry-run
+split_strategy: virtual_slice_holdout_by_physical_z
+split_seed: 20260529
+created_at_utc: '2026-05-29T00:00:00Z'
+file_size_bytes_or_manifest: multi-GB (>4M cells, 29,655 genes; BSDC portal / STOmics DB)
+content_hash_or_manifest_hash: pending_download_manifest_hash
+derived_figures_or_metrics: [A-F2, A-F4]
