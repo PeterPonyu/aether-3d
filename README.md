@@ -2,7 +2,7 @@
 
 **Learning Continuous 3D Tissue Vector Fields from Serial Spatial Omics Slices**
 
-Aether3D is a local research package for continuous 3D spatial-omics reconstruction experiments from discrete serial 2D physical slices. It targets joint velocity-field modeling over space, gene expression, and cell identity via optimal transport coupling + flow matching. Current evidence supports synthetic/local-small smoke validation; cell-level fidelity, broad baseline superiority, full interoperability, and large-atlas scalability remain gated by `../docs/CLAIM_LEDGER.md`.
+Aether3D is a local research package for continuous 3D spatial-omics reconstruction experiments from discrete serial 2D physical slices. It targets joint velocity-field modeling over space, gene expression, and cell identity via optimal transport coupling + flow matching. Current evidence supports synthetic/local-small smoke validation; cell-level fidelity, broad baseline superiority, full interoperability, and large-atlas scalability remain gated by [`CLAIM_LEDGER.md`](./CLAIM_LEDGER.md).
 
 Given a schema-valid stack of aligned 2D spatial transcriptomics / proteomics slices with physical Z coordinates, the target API produces a 3D AnnData-style volume for benchmarked virtual slicing and downstream evaluation. Downstream biological use requires the claim-ledger evidence gates to pass.
 

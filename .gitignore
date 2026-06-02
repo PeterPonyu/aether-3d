@@ -7,6 +7,10 @@ __pycache__/
 .coverage
 htmlcov/
 
+# Tooling caches (mypy/ruff create these in the repo root on local runs)
+.mypy_cache/
+.ruff_cache/
+
 # Build and Distribution
 build/
 develop-eggs/

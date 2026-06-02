@@ -1,0 +1,19 @@
+name: Docs
+description: Documentation work for Aether3D.
+labels: [docs]
+body:
+  - type: textarea
+    id: scope
+    attributes:
+      label: What should change?
+    validations:
+      required: true
+  - type: checkboxes
+    id: guardrails
+    attributes:
+      label: Guardrails
+      options:
+        - label: Does not introduce performance or biology claims without evidence.
+          required: true
+        - label: Does not reference sibling brands (LuminaST, FactorGraph-ST, NicheLens-ST).
+          required: true
