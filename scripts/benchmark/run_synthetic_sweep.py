@@ -2,9 +2,9 @@
 """
 Aether3D synthetic configuration sweep with held-out slice validation.
 
-Mirrors LuminaST's benchmark layout: generates synthetic serial slices, trains
-each refined model variant on Slice 0 + Slice 2, interpolates the missing
-Slice 1 (Z=10), and reports quality metrics + resource usage per config.
+Generates synthetic serial slices, trains each refined model variant on
+Slice 0 + Slice 2, interpolates the missing Slice 1 (Z=10), and reports
+quality metrics + resource usage per config.
 
 Outputs:
 
