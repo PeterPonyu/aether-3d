@@ -76,6 +76,7 @@ from aether_3d.benchmarks.spatial_coherence import chaos_score, pas_score
 from aether_3d.benchmarks.adapters import (
     LinearInterpAdapter,
     NearestSliceAdapter,
+    Stack25DAdapter,
 )
 
 # Default location of the five cached real MERFISH slices.
@@ -380,8 +381,9 @@ def evaluate_holdout(virtual_slice, held_slice, seed=42, n_domains=5):
 
 
 def evaluate_25d_contrast(slices, held_idx, virtual_slice, held_slice, seed=42):
-    """Run the 2.5D baselines (nearest-slice, linear-interp) on the SAME real
-    holdout and contrast against the continuous flow reconstruction.
+    """Run the 2.5D baselines (nearest-slice, linear-interp, and the clean-room
+    stack-2.5d virtual-slice baseline #221) on the SAME real holdout and
+    contrast against the continuous flow reconstruction.
 
     Returns ``{baseline_name: {metric: value}}`` plus a ``continuous`` entry, so
     the emitted table shows continuous-recon vs naive stacking on identical
@@ -423,7 +425,7 @@ def evaluate_25d_contrast(slices, held_idx, virtual_slice, held_slice, seed=42):
         label_key="cell_class",
         seed=seed,
     )
-    for adapter in (NearestSliceAdapter(), LinearInterpAdapter()):
+    for adapter in (NearestSliceAdapter(), LinearInterpAdapter(), Stack25DAdapter()):
         try:
             visible = inp.visible_slices()
             volume = adapter._reconstruct(visible, inp)

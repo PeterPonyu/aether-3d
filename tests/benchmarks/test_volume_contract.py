@@ -27,6 +27,7 @@ from aether_3d.benchmarks.adapters import (
     LinearInterpAdapter,
     NearestSliceAdapter,
     SpatialZAdapter,
+    Stack25DAdapter,
 )
 
 
@@ -137,56 +138,37 @@ def test_linear_interp_runs_and_returns_metrics():
     assert not np.isnan(per[0]["chamfer"])
 
 
-# -- SpatialZ availability paths ------------------------------------------
+# -- Clean-room 2.5D stacking baseline (#221) -----------------------------
+# The former SpatialZ stub (availability always False, never wired in) was
+# replaced by an always-available, license-clean 2.5D virtual-slice baseline.
+# SpatialZAdapter is retained only as a back-compat alias of Stack25DAdapter.
 
 
-def test_spatialz_unavailable_when_not_installed():
-    for n in ("spatialz", "SpatialZ", "spatial_z"):
-        sys.modules.pop(n, None)
+def test_stack25d_is_always_available_no_external_dep():
+    ok, reason = Stack25DAdapter().is_available()
+    assert ok, f"clean-room 2.5D baseline must be always-available; got {reason!r}"
+
+
+def test_spatialz_alias_points_at_clean_room_implementation():
+    # Back-compat: the historical public name still imports, but it is now the
+    # brand-independent clean-room baseline (same name, always available).
+    assert issubclass(SpatialZAdapter, Stack25DAdapter)
+    assert SpatialZAdapter().name == "stack-2.5d"
+    ok, _ = SpatialZAdapter().is_available()
+    assert ok
+
+
+def test_stack25d_runs_and_audit_holds():
+    # Audit-safety: the adapter only ever sees the *visible* slices; the
+    # held-out slice is removed by the contract before _reconstruct is called.
     stack = _make_synthetic_stack([0.0, 1.0, 2.0])
     inp = VolumeAdapterInput(slices=stack, held_out_indices=[1])
-
-    result = SpatialZAdapter().run(inp)
-    assert result.status.startswith("unavailable:"), result.status
-    assert "spatialz-not-installed" in result.status
-    assert result.volume_h5ad is None
-
-
-def test_spatialz_runs_with_mocked_module_and_audit_holds():
-    seen: dict = {}
-    fake = types.ModuleType("spatialz")
-
-    class _FakeSpatialZ:
-        def __init__(self, device: str = "cpu"):
-            self.device = device
-
-        def fit(self, slices):
-            seen["fit_z"] = sorted(float(s.obs["z"].iloc[0]) for s in slices)
-
-        def predict(self, virtual_z):
-            # Trivial: emit one virtual cell per requested z
-            n = len(virtual_z)
-            v = ad.AnnData(X=np.zeros((n, 12), dtype=np.float32))
-            v.var_names = [f"GENE_{i:03d}" for i in range(12)]
-            v.obsm["spatial"] = np.zeros((n, 2), dtype=np.float32)
-            v.obsm["spatial_3d"] = np.hstack(
-                [np.zeros((n, 2), dtype=np.float32), np.asarray(virtual_z, dtype=np.float32).reshape(-1, 1)]
-            )
-            v.obs["z"] = list(virtual_z)
-            return v
-
-    fake.SpatialZ = _FakeSpatialZ  # type: ignore[attr-defined]
-    sys.modules["spatialz"] = fake
-    try:
-        stack = _make_synthetic_stack([0.0, 1.0, 2.0])
-        inp = VolumeAdapterInput(slices=stack, held_out_indices=[1])
-
-        result = SpatialZAdapter().run(inp)
-        assert result.status == "ok", result.status
-        # Audit: SpatialZ only saw the visible slices' z-values
-        assert seen["fit_z"] == [0.0, 2.0]
-    finally:
-        sys.modules.pop("spatialz", None)
+    result = Stack25DAdapter().run(inp)
+    assert result.status == "ok", result.status
+    assert result.volume_h5ad is not None
+    # virtual cells stamped at the held-out resolved z (==1.0), not idx*spacing
+    zs = np.unique(np.asarray(result.volume_h5ad.obs["z"], dtype=np.float32))
+    assert np.allclose(zs, 1.0, atol=1e-4), zs
 
 
 # -- Runner + JSON --------------------------------------------------------
@@ -194,7 +176,7 @@ def test_spatialz_runs_with_mocked_module_and_audit_holds():
 
 def test_run_holdout_executes_all_adapters_and_aggregates(tmp_path: Path):
     stack = _make_synthetic_stack([0.0, 1.0, 2.0, 3.0])
-    adapters = [NearestSliceAdapter(), LinearInterpAdapter(), SpatialZAdapter()]
+    adapters = [NearestSliceAdapter(), LinearInterpAdapter(), Stack25DAdapter()]
 
     results = run_holdout(
         adapters, stack, held_out_indices=[2], seed=7,
@@ -206,9 +188,10 @@ def test_run_holdout_executes_all_adapters_and_aggregates(tmp_path: Path):
     key = "synth-stack/holdout-z2"
     assert key in aggregated["holdouts"]
     method_keys = set(aggregated["holdouts"][key])
-    assert method_keys == {"nearest-slice", "linear-interp", "spatialz"}
+    assert method_keys == {"nearest-slice", "linear-interp", "stack-2.5d"}
     assert aggregated["holdouts"][key]["nearest-slice"]["status"] == "ok"
-    assert aggregated["holdouts"][key]["spatialz"]["status"].startswith("unavailable:")
+    # Clean-room 2.5D baseline is always available and runs to completion.
+    assert aggregated["holdouts"][key]["stack-2.5d"]["status"] == "ok"
 
     out_path = write_volume_results_json(aggregated, tmp_path / "results.json")
     loaded = json.loads(out_path.read_text())
