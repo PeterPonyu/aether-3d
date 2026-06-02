@@ -25,6 +25,7 @@ from aether_3d.benchmarks import (
     write_volume_results_json,
 )
 from aether_3d.benchmarks.adapters import (
+    AetherAdapter,
     ASIGNAdapter,
     InterpolAIAdapter,
     LinearInterpAdapter,
@@ -70,6 +71,7 @@ def main() -> int:
     held_out = [2]  # drop middle slice
 
     adapters = [
+        AetherAdapter(),
         NearestSliceAdapter(),
         LinearInterpAdapter(),
         SpatialZAdapter(),
