@@ -38,6 +38,9 @@ import sys
 from typing import Callable
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(REPO_ROOT / "src"))
+from aether_3d.data.raw_counts import warn_if_not_raw_counts  # noqa: E402
+
 DEFAULT_CARDS_DIR = REPO_ROOT / "data" / "cards"
 ANNDATA_SCHEMA = "aether_3d_serial_slice"
 CONTRACT_KEYS = ("contract_spatial", "contract_z_coord", "contract_cell_class", "contract_X")
@@ -134,6 +137,9 @@ def _load_merfish_hypothalamus(card: DatasetCard) -> object:
         ) from exc
     adata = squidpy.datasets.merfish()
     print(f"[python_native] {card.data_card_id}: squidpy.datasets.merfish() -> {adata.shape}")
+    # Issue #181: the squidpy loader ships a NORMALIZED matrix — flag it so a
+    # normalized convenience matrix is never silently used for DL training.
+    warn_if_not_raw_counts(adata.X, name=card.data_card_id)
     print("split by obs['Bregma'] into z_coord-ordered sections for the serial stack.")
     return adata
 
@@ -149,6 +155,8 @@ def _load_visium_breast_cancer(card: DatasetCard) -> object:
     for sample in ("V1_Breast_Cancer_Block_A_Section_1", "V1_Breast_Cancer_Block_A_Section_2"):
         adata = scanpy.datasets.visium_sge(sample)
         print(f"[python_native] {card.data_card_id}: visium_sge({sample!r}) -> {adata.shape}")
+        # Issue #181: confirm each fetched section carries raw integer counts.
+        warn_if_not_raw_counts(adata.X, name=f"{card.data_card_id}:{sample}")
         sections.append(adata)
     print("assign z_coord (Section 1 -> 0.0, Section 2 -> physical spacing) for the serial stack.")
     return sections
