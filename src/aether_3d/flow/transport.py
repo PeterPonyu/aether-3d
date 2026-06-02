@@ -1,7 +1,7 @@
-"""Core flow-matching transport and sampling logic (Lumina / Aether).
+"""Core flow-matching transport and sampling logic for Aether3D.
 
-This module is the mathematical engine shared by LuminaST (latent gene diffusion)
-and Aether3D (multi-modal spatial + expression + cell-type velocity fields).
+This module is the mathematical engine for Aether3D's multi-modal
+(spatial + expression + cell-type) velocity fields.
 
 Design goals for the refactor:
 - Zero original strings / class names from the baselines.
@@ -10,8 +10,8 @@ Design goals for the refactor:
 - Easy to unit-test numerical fidelity on synthetic data.
 - Modern Python (dataclasses, type hints, no global state).
 
-The public API that higher-level modules (LuminaFlowModule, AetherFlowModule)
-will use is intentionally small:
+The public API that higher-level modules (AetherFlowModule) use is
+intentionally small:
 
     transport = create_flow_transport(path="linear", prediction="velocity")
     sampler   = FlowSampler(transport)

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Deep verification script for Aether3D (mirrors LuminaST's verify script).
+Deep verification script for Aether3D.
 
 - Generates synthetic serial 2D slices with spatial + gene + cell class
 - Builds UOT trajectory dataset via AetherReconstructor.setup_data

@@ -2,7 +2,7 @@
 AetherReconstructor — high-level API for true 3D spatial omics reconstruction.
 
 This is the main user-facing class for the Aether3D project.
-It mirrors the role of LuminaImputer but for serial slice → continuous 3D volume.
+It is the high-level entry point for serial slice → continuous 3D volume reconstruction.
 """
 
 from __future__ import annotations

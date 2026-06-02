@@ -1,5 +1,5 @@
 """
-Conditioning embeddings for LuminaST (fresh implementation).
+Conditioning embeddings for Aether3D (fresh implementation).
 
 Contains:
 - TimestepEmbedder (sinusoidal + MLP)

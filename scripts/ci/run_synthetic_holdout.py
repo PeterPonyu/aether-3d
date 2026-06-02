@@ -3,8 +3,7 @@
 
 Generates a synthetic 5-slice stack with random spatial coords + Poisson
 expression, drops the middle slice as held-out truth, asks every adapter
-to reconstruct, and writes the result JSON. Mirrors the LuminaST smoke
-script in spirit but operates on volume data.
+to reconstruct, and writes the result JSON.
 
 Usage:
     python scripts/ci/run_synthetic_holdout.py

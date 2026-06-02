@@ -1,7 +1,7 @@
-"""Lumina / Aether Flow Matching primitives.
+"""Aether3D Flow Matching primitives.
 
-Clean-room, fully retyped and re-documented implementation of the probability-path
-+ velocity-field machinery originally present in both baseline repositories.
+Clean-room, fully retyped and re-documented implementation of the
+probability-path + velocity-field machinery.
 
 Public symbols:
     create_flow_transport, FlowTransport, FlowSampler

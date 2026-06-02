@@ -1,4 +1,4 @@
-"""Utility helpers for the Lumina / Aether flow-matching library.
+"""Utility helpers for the Aether3D flow-matching library.
 
 This module contains small, pure helpers that are used across the flow
 implementation. All functions are numerically stable and well-documented.
