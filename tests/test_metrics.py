@@ -23,7 +23,10 @@ from __future__ import annotations
 
 import numpy as np
 
-from aether_3d.benchmarks.metrics import gene_pearson_fidelity
+from aether_3d.benchmarks.metrics import (
+    gene_pearson_fidelity,
+    voxel_cosine_similarity,
+)
 from aether_3d.benchmarks.topology import betti_zero_stability
 
 
@@ -122,3 +125,97 @@ def test_betti0_collapsed_not_one() -> None:
         f"collapsed ({score_collapsed}) should be much worse than identity "
         f"({score_identity})"
     )
+
+
+def _grid_cloud(
+    seed: int, n: int = 400
+) -> tuple[np.ndarray, np.ndarray]:
+    """A reproducible 3D point cloud with a spatially-structured cell-type field.
+
+    Cell type is assigned from the x-octant so that local composition varies
+    across space — exactly the signal voxel cosine similarity is meant to read.
+    """
+    rng = np.random.default_rng(seed)
+    coords = rng.uniform(0.0, 100.0, size=(n, 3)).astype(np.float64)
+    # 4 spatially-banded cell types along x => non-uniform local composition.
+    labels = np.array(
+        [f"T{int(x // 25)}" for x in coords[:, 0]], dtype=object
+    )
+    return coords, labels
+
+
+def test_voxel_cosine_identical_is_one():
+    """Identical truth/recon point sets => mean voxel cosine == 1.0."""
+    coords, labels = _grid_cloud(seed=0)
+    score = voxel_cosine_similarity(
+        coords, labels, coords.copy(), labels.copy(), n_bins=5
+    )
+    assert isinstance(score, float)
+    assert abs(score - 1.0) < 1e-9, score
+
+
+def test_voxel_cosine_spatial_scramble_scores_lower():
+    """Scrambling cell-type labels across space (global proportions preserved)
+    must score markedly lower on the voxel-local metric, even though the global
+    `celltype_distribution_cosine` stays ~1.0 — pinning the local/global split.
+    """
+    from aether_3d.benchmarks.metrics import celltype_distribution_cosine
+
+    coords, labels = _grid_cloud(seed=1)
+    rng = np.random.default_rng(99)
+    scrambled = labels[rng.permutation(labels.shape[0])]
+
+    voxel_score = voxel_cosine_similarity(
+        coords, labels, coords.copy(), scrambled, n_bins=5
+    )
+    # Global proportion cosine is permutation-invariant => essentially 1.0.
+    global_score = celltype_distribution_cosine(
+        labels.tolist(), scrambled.tolist()
+    )
+
+    assert isinstance(voxel_score, float)
+    assert global_score > 0.999, global_score
+    assert voxel_score < 0.9, voxel_score
+    assert voxel_score < global_score - 0.05, (voxel_score, global_score)
+
+
+def test_voxel_cosine_downsample_reconstruct_is_sensible():
+    """A down-sample => reconstruct toy: a faithful (subsampled) reconstruction
+    should score high, while a spatially-shifted reconstruction scores lower.
+    """
+    coords, labels = _grid_cloud(seed=2, n=600)
+    rng = np.random.default_rng(7)
+    keep = rng.choice(coords.shape[0], size=300, replace=False)
+    recon_coords = coords[keep]
+    recon_labels = labels[keep]
+
+    faithful = voxel_cosine_similarity(
+        coords, labels, recon_coords, recon_labels, n_bins=4
+    )
+    # Shift recon by ~half the domain along x => cell types land in wrong voxels.
+    shifted_coords = recon_coords.copy()
+    shifted_coords[:, 0] = shifted_coords[:, 0] + 50.0
+    shifted = voxel_cosine_similarity(
+        coords, labels, shifted_coords, recon_labels, n_bins=4
+    )
+
+    assert isinstance(faithful, float) and isinstance(shifted, float)
+    assert faithful > 0.95, faithful
+    assert shifted < faithful, (shifted, faithful)
+
+
+def test_voxel_cosine_return_per_voxel_and_empty():
+    """`return_per_voxel` yields the per-voxel array; empty input => NaN."""
+    coords, labels = _grid_cloud(seed=3, n=200)
+    out = voxel_cosine_similarity(
+        coords, labels, coords.copy(), labels.copy(), n_bins=3,
+        return_per_voxel=True,
+    )
+    assert isinstance(out, tuple)
+    mean_cos, per_voxel = out
+    assert per_voxel.ndim == 1 and per_voxel.size > 0
+    assert abs(mean_cos - float(np.mean(per_voxel))) < 1e-12
+
+    empty = np.zeros((0, 3), dtype=np.float64)
+    nan_score = voxel_cosine_similarity(empty, [], coords, labels, n_bins=3)
+    assert isinstance(nan_score, float) and np.isnan(nan_score)
