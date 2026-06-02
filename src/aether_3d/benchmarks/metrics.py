@@ -261,6 +261,150 @@ def celltype_distribution_cosine(
     return float(np.dot(t, r) / (nt * nr))
 
 
+def voxel_cosine_similarity(
+    coords_truth: npt.NDArray[np.floating[Any]],
+    labels_truth: Sequence[Any] | npt.NDArray[Any],
+    coords_recon: npt.NDArray[np.floating[Any]],
+    labels_recon: Sequence[Any] | npt.NDArray[Any],
+    *,
+    n_bins: int = 10,
+    voxel_size: float | None = None,
+    return_per_voxel: bool = False,
+) -> float | tuple[float, npt.NDArray[np.float64]]:
+    """Voxel-binned cell-type composition cosine similarity (DeepSpatial Fig. 2).
+
+    DeepSpatial's *primary* 3D-reconstruction fidelity metric. Both point sets
+    are binned into a single shared voxel grid spanning the union of their
+    bounding boxes; each voxel's cell-type *composition* vector (counts per
+    cell-type over a shared vocabulary) is formed, and a cosine similarity is
+    computed per voxel between the truth and reconstruction compositions. The
+    score is the mean over voxels that have cells in **both** point sets
+    (empty / one-sided voxels are skipped). 1.0 = every shared voxel has an
+    identical local cell-type mixture; lower values mean the reconstruction
+    redistributes cell types across space.
+
+    This is the *spatially-local* counterpart of `celltype_distribution_cosine`,
+    which collapses each point set to a single global proportion vector and is
+    therefore blind to where cell types land. A reconstruction that preserves
+    global proportions but scrambles them spatially scores ~1.0 on the global
+    metric yet markedly lower here.
+
+    Cosine is invariant to positive scaling, so raw per-voxel counts are used
+    directly (normalizing to proportions would give the same value). The grid
+    is deterministic: shared bounding box + fixed bin edges per axis, so the
+    result is reproducible and free of any RNG.
+
+    Args:
+        coords_truth: ``(N_t, D)`` spatial coordinates of truth cells (D is
+            typically 3 for x/y/z, but any D >= 1 is supported).
+        labels_truth: length-``N_t`` cell-type labels (coerced to ``str``).
+        coords_recon: ``(N_r, D)`` spatial coordinates of reconstructed cells.
+        labels_recon: length-``N_r`` cell-type labels (coerced to ``str``).
+        n_bins: number of bins per axis when ``voxel_size`` is ``None``.
+        voxel_size: physical edge length of a cubic voxel (same units as the
+            coordinates). When given, the per-axis bin count is derived from the
+            shared bounding box and this overrides ``n_bins``.
+        return_per_voxel: when ``True``, also return the array of per-voxel
+            cosine values for the shared voxels (in voxel-id order).
+
+    Returns:
+        Mean voxel cosine similarity as a ``float`` (NaN on empty input,
+        mismatched dimensions handled via the shared box, or when no voxel is
+        populated on both sides). When ``return_per_voxel`` is ``True`` a
+        ``(mean, per_voxel_array)`` tuple is returned instead.
+
+    Raises:
+        ValueError: if a coordinate array is not 2D, the truth/recon coordinate
+            dimensionalities differ, labels do not match their coordinates, or
+            ``n_bins`` / ``voxel_size`` are non-positive.
+    """
+    empty: npt.NDArray[np.float64] = np.empty(0, dtype=np.float64)
+    coords_t = np.asarray(coords_truth, dtype=np.float64)
+    coords_r = np.asarray(coords_recon, dtype=np.float64)
+    if coords_t.size == 0 or coords_r.size == 0:
+        return (float("nan"), empty) if return_per_voxel else float("nan")
+    if coords_t.ndim != 2 or coords_r.ndim != 2:
+        raise ValueError(
+            f"voxel_cosine_similarity requires 2D coords; got {coords_t.shape}, {coords_r.shape}"
+        )
+    if coords_t.shape[1] != coords_r.shape[1]:
+        raise ValueError(
+            f"truth and recon coordinate dims differ: {coords_t.shape[1]} vs {coords_r.shape[1]}"
+        )
+    if len(labels_truth) != coords_t.shape[0] or len(labels_recon) != coords_r.shape[0]:
+        raise ValueError("labels length must match the number of coordinate rows")
+    if n_bins < 1:
+        raise ValueError(f"n_bins must be >= 1, got {n_bins}")
+    if voxel_size is not None and voxel_size <= 0:
+        raise ValueError(f"voxel_size must be positive, got {voxel_size}")
+
+    n_dim = coords_t.shape[1]
+    lo = np.minimum(coords_t.min(axis=0), coords_r.min(axis=0))
+    hi = np.maximum(coords_t.max(axis=0), coords_r.max(axis=0))
+    span = hi - lo
+
+    # Per-axis bin counts. Degenerate (zero-span) axes collapse to a single bin.
+    bins_per_axis = np.ones(n_dim, dtype=np.int64)
+    for d in range(n_dim):
+        if span[d] <= 0:
+            continue
+        if voxel_size is not None:
+            bins_per_axis[d] = max(1, int(np.ceil(span[d] / voxel_size)))
+        else:
+            bins_per_axis[d] = n_bins
+
+    def _voxel_ids(coords: npt.NDArray[np.float64]) -> npt.NDArray[np.int64]:
+        axis_idx = []
+        for d in range(n_dim):
+            nb = int(bins_per_axis[d])
+            if nb <= 1 or span[d] <= 0:
+                axis_idx.append(np.zeros(coords.shape[0], dtype=np.int64))
+                continue
+            frac = (coords[:, d] - lo[d]) / span[d]
+            idx = np.floor(frac * nb).astype(np.int64)
+            np.clip(idx, 0, nb - 1, out=idx)
+            axis_idx.append(idx)
+        return np.asarray(
+            np.ravel_multi_index(tuple(axis_idx), tuple(int(b) for b in bins_per_axis)),
+            dtype=np.int64,
+        )
+
+    # Shared cell-type vocabulary over both point sets.
+    lab_t = np.asarray(labels_truth, dtype=str)
+    lab_r = np.asarray(labels_recon, dtype=str)
+    vocab = np.union1d(lab_t, lab_r)
+    n_types = int(vocab.shape[0])
+    if n_types == 0:
+        return (float("nan"), empty) if return_per_voxel else float("nan")
+    code_t = np.searchsorted(vocab, lab_t)
+    code_r = np.searchsorted(vocab, lab_r)
+
+    n_vox = int(np.prod(bins_per_axis))
+    vox_t = _voxel_ids(coords_t)
+    vox_r = _voxel_ids(coords_r)
+
+    # (n_vox, n_types) composition matrices via flattened bincount.
+    comp_t = np.bincount(
+        vox_t * n_types + code_t, minlength=n_vox * n_types
+    ).astype(np.float64).reshape(n_vox, n_types)
+    comp_r = np.bincount(
+        vox_r * n_types + code_r, minlength=n_vox * n_types
+    ).astype(np.float64).reshape(n_vox, n_types)
+
+    norm_t = np.linalg.norm(comp_t, axis=1)
+    norm_r = np.linalg.norm(comp_r, axis=1)
+    shared = (norm_t > 0) & (norm_r > 0)
+    if not np.any(shared):
+        return (float("nan"), empty) if return_per_voxel else float("nan")
+
+    dots = np.einsum("ij,ij->i", comp_t[shared], comp_r[shared])
+    per_voxel = dots / (norm_t[shared] * norm_r[shared])
+    mean_cos = float(np.mean(per_voxel))
+    if return_per_voxel:
+        return mean_cos, per_voxel.astype(np.float64)
+    return mean_cos
+
+
 def virtual_plane(
     volume_adata: ad.AnnData,
     axis: str,
