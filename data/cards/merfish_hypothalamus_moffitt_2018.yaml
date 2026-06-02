@@ -10,6 +10,14 @@ contact_or_citation: Moffitt et al. 2018, Molecular, spatial, and functional sin
 serial_slice_fit: zero-glue Python-native serial z-stack — 8 anterior-posterior Bregma z-levels (obs['Bregma']) + native obsm['spatial3d']; 73,655 x 161. Split each Bregma level into its own AnnData for the ordered stack.
 contract_spatial: obsm['spatial'] (2D in-plane per Bregma section)
 contract_z_coord: obs['Bregma'] (or obsm['spatial3d'][:, 2])
+# Machine-readable physical-z source (issue #222). The pipeline's resolver
+# (aether_3d.data.physical_z.resolve_slice_z) reads a per-section physical z from
+# these obs fields in preference order; the cached baseline slices expose the
+# Bregma mm value under obs['slice_id']. z_spacing_um is the real anterior-
+# posterior section pitch (~0.05 mm = 50 um) used as the configurable fallback.
+z_coord_key: Bregma
+z_coord_key_aliases: [Bregma, slice_id]
+z_spacing_um: 50.0
 contract_cell_class: obs['Cell_class']
 contract_X: squidpy loader is normalized — use Dryad raw matrix for DL training
 raw_count_policy: raw integer counts only for DL training (Dryad raw matrix); squidpy normalized matrix is exploration-only.
