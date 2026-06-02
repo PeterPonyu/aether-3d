@@ -18,6 +18,7 @@ import scanpy as sc
 import pandas as pd
 from aether_3d.config.aether_config import Aether3DConfig
 from aether_3d.core.aether_reconstructor import AetherReconstructor
+from aether_3d.data.physical_z import resolve_slice_z
 
 
 def generate_synthetic_slices(n_slices=3, cells_per_slice=48, n_genes=16, n_classes=4):
@@ -75,8 +76,16 @@ def main():
                 f"       Loading {len(h5ads)} real serial slices for E2E verification.\n"
             )
             adatas = [sc.read_h5ad(p) for p in h5ads]
-            for idx, adata in enumerate(adatas):
-                adata.obs["z_coord"] = float(idx * 10.0)
+            # Issue #222: source REAL physical inter-slice z from the data
+            # (obs['Bregma'] / obs['slice_id'] mm / obsm['spatial3d']); only fall
+            # back to a synthetic idx*spacing ladder when absent.
+            z_values, z_is_physical = resolve_slice_z(adatas, fallback_spacing=10.0)
+            for adata, z in zip(adatas, z_values):
+                adata.obs["z_coord"] = float(z)
+            print(
+                f"       z_is_physical={z_is_physical} "
+                f"(z range {min(z_values):.4g}..{max(z_values):.4g})\n"
+            )
         else:
             print(
                 "Baseline folder exists but no .h5ad files found. Falling back to synthetic."
