@@ -1,0 +1,27 @@
+name: Bug
+description: Report a defect in Aether3D.
+labels: [bug]
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What is wrong?
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Reproduction
+      description: Minimal steps and inputs.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected vs actual
+  - type: textarea
+    id: env
+    attributes:
+      label: Environment
+      description: OS, Python version, package version, commit SHA.

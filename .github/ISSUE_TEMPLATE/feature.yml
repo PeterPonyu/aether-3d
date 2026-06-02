@@ -1,0 +1,29 @@
+name: Feature
+description: Propose a feature for Aether3D.
+labels: [feature]
+body:
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope
+      description: What should be added?
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: Checklist of testable criteria.
+    validations:
+      required: true
+  - type: checkboxes
+    id: guardrails
+    attributes:
+      label: Guardrails
+      options:
+        - label: Will not vendor or copy DeepSpatial / baseline source.
+          required: true
+        - label: Will not reference unrelated sibling-project brands (LuminaST, FactorGraph-ST, NicheLens-ST).
+          required: true
+        - label: Will not claim performance vs baselines without local-test evidence recorded in the claim ledger.
+          required: true
