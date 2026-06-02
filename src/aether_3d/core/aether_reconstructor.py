@@ -149,6 +149,12 @@ class AetherReconstructor:
                 f"reconstruct_continuous_volume needs >=2 slices; got {len(adata_list)}."
             )
 
+        # Cross-slice precondition checks (issue #132): fail with a precise,
+        # named error before any cdist / UOT / multinomial call rather than
+        # crashing deep inside the velocity field or producing non-finite
+        # coupling probabilities.
+        self._validate_slices(adata_list)
+
         rng = np.random.default_rng(self.cfg.seed)
         all_cells = []
         z_offset = 0.0
@@ -373,6 +379,82 @@ class AetherReconstructor:
             f"  Reconstructed volume has {volume.n_obs} virtual cells across {len(adata_list) - 1} intervals."
         )
         return volume
+
+    def _validate_slices(self, adata_list: List[ad.AnnData]) -> None:
+        """Validate cross-slice schema + finiteness before reconstruction.
+
+        Raises an informative ``ValueError`` (naming the offending slice index)
+        when slices disagree on gene/spatial dimensionality, are missing a
+        required key, or carry non-finite coordinates/expression. This converts
+        opaque downstream tensor-shape crashes and non-finite UOT couplings into
+        precise preconditions (issue #132).
+        """
+        spatial_key = self.cfg.spatial_key
+        z_key = self.cfg.z_key
+        label_key = self.cfg.label_key
+
+        ref_gene_dim: int | None = None
+        ref_spatial_dim: int | None = None
+
+        for i, adata in enumerate(adata_list):
+            # ---- required keys -------------------------------------------------
+            if spatial_key not in adata.obsm:
+                raise ValueError(
+                    f"slice {i} is missing obsm[{spatial_key!r}] (2D spatial coordinates)."
+                )
+            if z_key not in adata.obs:
+                raise ValueError(
+                    f"slice {i} is missing obs[{z_key!r}] (physical z coordinate)."
+                )
+            if label_key not in adata.obs:
+                raise ValueError(
+                    f"slice {i} is missing obs[{label_key!r}] (cell-type labels)."
+                )
+
+            # ---- gene dimension consistency -----------------------------------
+            gene_dim = int(adata.n_vars)
+            if ref_gene_dim is None:
+                ref_gene_dim = gene_dim
+            elif gene_dim != ref_gene_dim:
+                raise ValueError(
+                    f"slice {i} has {gene_dim} genes, expected {ref_gene_dim} "
+                    f"(all slices must share the gene dimension; slice 0 sets the reference)."
+                )
+
+            # ---- spatial dimension consistency + 2D shape ---------------------
+            spatial = np.asarray(adata.obsm[spatial_key])
+            if spatial.ndim != 2:
+                raise ValueError(
+                    f"slice {i} obsm[{spatial_key!r}] must be 2D (n_cells, n_dims); "
+                    f"got shape {spatial.shape}."
+                )
+            spatial_dim = int(spatial.shape[1])
+            if ref_spatial_dim is None:
+                ref_spatial_dim = spatial_dim
+            elif spatial_dim != ref_spatial_dim:
+                raise ValueError(
+                    f"slice {i} has spatial dimensionality {spatial_dim}, "
+                    f"expected {ref_spatial_dim} (all slices must agree)."
+                )
+
+            # ---- finiteness ----------------------------------------------------
+            if not np.isfinite(spatial).all():
+                raise ValueError(
+                    f"slice {i} obsm[{spatial_key!r}] contains non-finite values (NaN/Inf)."
+                )
+
+            z_vals = np.asarray(adata.obs[z_key].values, dtype=np.float64)
+            if not np.isfinite(z_vals).all():
+                raise ValueError(
+                    f"slice {i} obs[{z_key!r}] contains non-finite values (NaN/Inf)."
+                )
+
+            X = adata.X
+            X_arr = X.toarray() if hasattr(X, "toarray") else np.asarray(X)
+            if not np.isfinite(X_arr).all():
+                raise ValueError(
+                    f"slice {i} expression matrix (X) contains non-finite values (NaN/Inf)."
+                )
 
     def _get_onehot(
         self, adata: ad.AnnData, indices: npt.NDArray[np.int64]
