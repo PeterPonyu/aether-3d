@@ -35,8 +35,8 @@
   \begin{center}\colorbox{yellow!30}{\parbox{0.9\textwidth}{%
   \textbf{DRAFT --- SYNTHETIC PLACEHOLDER DATA.} Every numerical result and
   figure in this manuscript is generated from the synthetic benchmark JSONs
-  under \texttt{aether-3d/results/benchmark/}. No claim has graduated to
-  \emph{paper-ready} status in \texttt{docs/CLAIM\_LEDGER.md}. Real-data
+  under \path{aether-3d/results/benchmark/}. No claim has graduated to
+  \emph{paper-ready} status in the project claim ledger. Real-data
   promotion is gated by the acceptance matrix.
   }}\end{center}}
 
@@ -81,8 +81,10 @@ section spacing, missing sections, and modality-specific resolution explicit
 sources of variation~\cite{Dong2025MultisliceBenchmark,
 ClusteringIntegrationBenchmark2024,You2024SequencingST,Cervilla2026SixCancerPlatforms}.
 Prior art spans alignment-only
-methods, 2.5D virtual-slice interpolators, and continuous-field
-generative models; we cite these as motivation rather than re-using their
+methods~\cite{Zeira2022PASTE,Liu2023PASTE2,Zhou2023STAligner,Jones2023GPSA,Clifton2023STalign},
+2.5D virtual-slice interpolators, and continuous-field
+generative and multi-slice 3D-reconstruction models~\cite{Wang2023STitch3D};
+we cite these as motivation rather than re-using their
 methodology, with the baseline reference treated as an aspirational large-scale prior-art
 comparison rather than a reproduced result~\cite{Yang2026DeepSpatial}.
 \textsc{Aether3D} builds on entropic optimal
@@ -181,7 +183,7 @@ scaling harness (\texttt{aether\_3d.benchmarks.scaling}) records device,
 torch version, CUDA version, hostname, peak GPU memory, runtime, and
 git SHA per measurement, so a reviewer can re-run any single scaling
 point. Downstream cellular-neighborhood analysis
-(\texttt{aether\_3d.benchmarks.neighborhood}) computes radius-$R$
+(\texttt{aether\_3d.benchmarks.\allowbreak neighborhood}) computes radius-$R$
 distance-band enrichment and z-axis depth-binned density profiles
 around any query cell type, supporting the in-silico sectioning and
 co-localization analyses described in Section~\ref{sec:results}.
@@ -313,7 +315,7 @@ through the contract will produce nonzero memory under the
 biological superiority over any prior 3D reconstruction method. The
 audit boundary requires that every promotion of a claim from
 \texttt{validated-small} or \texttt{blocked} to \texttt{paper-ready} be
-backed by real-data evidence linked from \texttt{docs/CLAIM\_LEDGER.md}.
+backed by real-data evidence linked from the project claim ledger.
 The deliverables present today are: (i)~a uniform volume-adapter
 contract that catches audit regressions mechanically; (ii)~the
 eight-metric per-virtual-slice suite (geometry, molecular, and
@@ -325,10 +327,10 @@ fast when the running torch cannot launch kernels on the visible GPU.
 
 Three limitations frame the present manuscript. First, the
 volume-adapter contract is exercised on a synthetic point cloud with
-regular inter-slice spacing; real-data sections (e.g., the BRCA IMC
-volume targeted by calendar Day~6+) carry irregular spacing, which
+regular inter-slice spacing; real-data sections (e.g., a BRCA IMC serial
+volume) carry irregular spacing, which
 shifts the burden onto the UOT cost function and the
-\texttt{maximal\_common\_region} helper introduced in this revision. The
+maximal-common-region helper introduced in this revision. The
 contract handles arbitrary spacing by construction, but evidence under
 real organ-boundary mutations and tissue tearing is not yet in scope.
 Second, the 2.5D vs continuous-3D distinction matters: our reconstruction
@@ -339,24 +341,22 @@ represented. Third, the vascular-network 3D-graph topology metrics ship
 as a callable module
 (\texttt{aether\_3d.benchmarks.graph\_3d}) but are exercised only on
 synthetic graphs; the BRCA-IMC vascular-network demo~\cite{Yang2026DeepSpatial} waits
-for the Day~7 IMC volume.
+for a real IMC volume.
 
 \subsection{Future work}
 
-The immediate next milestone is the calendar Day~6 BRCA IMC volume (see
-\texttt{docs/DATA\_PREP\_CALENDAR.md}), at which point the held-out
-virtual-slice benchmark moves from synthetic to real evidence and the
-distance-band neighborhood-heatmap composer skeleton at
-\texttt{aether-3d/manuscript/compose\_neighborhood\_heatmap.py} can be
-re-driven against real cellular neighborhoods. Subsequent days unlock
-the multi-planar (sagittal/coronal/horizontal) virtual-plane composer
-on real coordinates (Day~7) and the per-brain-region cell-type
-Spearman panel on the ABC mouse-brain section ladder (Day~8).
-The 39-million-cell whole-atlas reconstruction is cited rather than reproduced~\cite{Yang2026DeepSpatial}; we scale gradually section by section
-from the calendar Day~2 anchor (section C57BL6J-638850.31). Each
+Our next step is to evaluate on a real BRCA IMC serial-section volume, at
+which point the held-out virtual-slice benchmark moves from synthetic to
+real evidence and the distance-band neighborhood-heatmap composer can be
+re-driven against real cellular neighborhoods. Subsequent milestones add a
+multi-planar (sagittal/coronal/horizontal) virtual-plane composer on real
+coordinates and a per-brain-region cell-type Spearman panel on a
+mouse-brain section ladder.
+The whole-atlas-scale reconstruction is cited rather than reproduced~\cite{Yang2026DeepSpatial}; we plan to scale gradually,
+section by section. Each
 transition is gated by the claim-ledger update described above; no
 claim graduates without linked evidence.
-Animal-1/Animal-2 cross-validation and CellCharter-style spatial-domain
+Cross-animal validation and CellCharter-style spatial-domain
 analysis are likewise treated as reference-pressure checks rather than
 implemented claims until the required independent atlas and external-method
 contracts are present~\cite{Yang2026DeepSpatial,Varrone2024CellCharter}.

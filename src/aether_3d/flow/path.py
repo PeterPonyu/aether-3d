@@ -19,8 +19,7 @@ Each path implements:
 All math is implemented in pure PyTorch and is numerically careful around t=0/1.
 
 The design is intentionally decoupled from any biological meaning so that the
-same primitives can be used by both LuminaST (latent gene space) and Aether3D
-(multi-modal spatial + gene + cell-type space).
+same primitives serve Aether3D's multi-modal spatial + gene + cell-type space.
 """
 
 from __future__ import annotations
@@ -37,16 +36,12 @@ from .utils import expand_time_like_data
 
 PathName = Literal["linear", "gvp", "vp"]
 
-# Per-sample alpha gate threshold for ``InterpolationPath.drift``. Shared with
-# the lumina-st PR for #123 (cross-repo drift cluster); both repos must use the
-# same value so the fix shape is identical across forks.
+# Per-sample alpha gate threshold for ``InterpolationPath.drift`` (issue #136).
 EPS_ALPHA = 1e-6
 
 # Boundary epsilon for the velocity<->score / velocity<->noise conversions.
 # At t in {0, 1} the conversion denominators (``var``) and the ``ratio = a/da``
-# factor collapse to 0 or blow up, depending on the path family. Shared with
-# the lumina-st PR for #122 (cross-repo velocity-score cluster); both repos
-# must use the same constant and clamp shape so the fix is identical.
+# factor collapse to 0 or blow up, depending on the path family (issue #135).
 EPS_BOUNDARY = 1e-6
 
 
@@ -114,8 +109,6 @@ class InterpolationPath(ABC):
         # Per-sample mask (NOT batch-wide reduction) so a single boundary-near
         # sample cannot zero out the entire batch's drift (issue #136). The
         # safe denominator avoids div-by-near-zero blow-up on masked rows.
-        # Same shape, EPS, and test name as lumina-st #123 — see the cross-repo
-        # drift template in .omc/plans/st-issues-consensus-plan.md.
         mask = a.abs() > EPS_ALPHA
         safe_a = torch.where(mask, a, torch.ones_like(a))
         drift = torch.where(mask, da / safe_a * x, torch.zeros_like(x))

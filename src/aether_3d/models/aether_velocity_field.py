@@ -1,7 +1,7 @@
 """
 MultiModalVelocityField for Aether3D.
 
-This is the 3D reconstruction counterpart to LuminaTransformer.
+It is a multi-modal transformer velocity field for 3D reconstruction.
 It predicts a joint velocity vector field over (spatial coords, gene expression, cell class)
 conditioned on time and slice metadata.
 

@@ -1,8 +1,8 @@
 """
 AetherFlowModule — Lightning training module for Aether3D multi-modal flow matching.
 
-Analogous to LuminaFlowModule but handles the joint (spatial, gene, class) state
-and the weighted multi-task loss (lambda_g, lambda_c).
+Handles the joint (spatial, gene, class) state and the weighted
+multi-task loss (lambda_g, lambda_c).
 """
 
 from __future__ import annotations

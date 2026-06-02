@@ -24,8 +24,8 @@ def run_holdout(
 ) -> list[VolumeAdapterResult]:
     """Drop the specified slices, ask each adapter to reconstruct, score.
 
-    Note: this is the equivalent of LuminaST's `run_panel` — same contract
-    discipline, different data shape.
+    The contract discipline matches the project's shared benchmark runner;
+    only the data shape (a list of slices) differs.
     """
     inp = VolumeAdapterInput(
         slices=slices,

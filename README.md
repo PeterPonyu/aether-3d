@@ -2,7 +2,7 @@
 
 **Learning Continuous 3D Tissue Vector Fields from Serial Spatial Omics Slices**
 
-Aether3D is a local research package for continuous 3D spatial-omics reconstruction experiments from discrete serial 2D physical slices. It targets joint velocity-field modeling over space, gene expression, and cell identity via optimal transport coupling + flow matching. Current evidence supports synthetic/local-small smoke validation; cell-level fidelity, broad baseline superiority, full interoperability, and large-atlas scalability remain gated by `../docs/CLAIM_LEDGER.md`.
+Aether3D is a local research package for continuous 3D spatial-omics reconstruction experiments from discrete serial 2D physical slices. It targets joint velocity-field modeling over space, gene expression, and cell identity via optimal transport coupling + flow matching. Current evidence supports synthetic/local-small smoke validation; cell-level fidelity, broad baseline superiority, full interoperability, and large-atlas scalability remain gated by [`CLAIM_LEDGER.md`](./CLAIM_LEDGER.md).
 
 Given a schema-valid stack of aligned 2D spatial transcriptomics / proteomics slices with physical Z coordinates, the target API produces a 3D AnnData-style volume for benchmarked virtual slicing and downstream evaluation. Downstream biological use requires the claim-ledger evidence gates to pass.
 
@@ -66,19 +66,18 @@ This architecture defines the local Aether3D implementation surface. Publication
 
 Aether3D is an independent package and manuscript track for continuous 3D spatial-omics reconstruction from serial sections. The public DeepSpatial preprint and repository are treated as prior art for the general research problem and for audit comparison only; Aether3D's user-facing API, documentation, validation plan, figures, and manuscript claims must be written from local evidence.
 
-See [BASELINE_COMPARISON.md](./BASELINE_COMPARISON.md) and the frozen audit tree `../baselines/DeepSpatial-original/` for traceability and leakage checks. Claims graduate to the manuscript only through the project claim ledger and reproducible benchmark artifacts, not by inheriting claims from the reference work.
+See [BASELINE_COMPARISON.md](./BASELINE_COMPARISON.md) for the audit boundary and leakage checks. The frozen DeepSpatial audit tree referenced there is kept in the internal monorepo and is not shipped with this standalone clone. Claims graduate to the manuscript only through the project claim ledger and reproducible benchmark artifacts, not by inheriting claims from the reference work.
 
 **Prior-art citation** (to appear in final paper):
 > Yang, Y. et al. "Reconstructing True 3D Spatial Omics at Single-Cell Resolution." bioRxiv (2026).
 
-## Status (2026-05-21)
+## Status
 
-- **Phase 0** — Skeletons + audit protection + 5090 check: **complete**
-- **Phase 1** — Clean `flow/` primitives (identical to LuminaST for full package independence): **complete**
+- **Phase 0** — Skeletons + audit protection: **complete**
+- **Phase 1** — Clean `flow/` primitives (independent implementation): **complete**
+- **Phase 3** — UOT coupling, multi-modal velocity field, and the 3D reconstructor: **implemented** (synthetic / local-small smoke validated; real-data claims gated by the claim ledger).
 
-Next: Phase 3 (UOT coupling, multi-modal velocity field, 3D reconstructor).
-
-Goal: two separate, high-quality, pip-installable research packages and manuscript tracks once claim-ledger evidence supports the intended paper claims.
+Goal: a high-quality, pip-installable research package and manuscript track, with paper claims promoted only once claim-ledger evidence supports them.
 
 ## License
 
@@ -86,4 +85,4 @@ MIT.
 
 ---
 
-*Companion project to LuminaST under the 2026 spatial omics re-implementation program.*
+*Part of the 2026 spatial omics re-implementation program.*

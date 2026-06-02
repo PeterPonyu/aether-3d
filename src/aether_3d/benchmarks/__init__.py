@@ -5,9 +5,9 @@
 - Truth is held out at the *slice* level (drop one or more physical sections,
   ask the method to reconstruct them via interpolation/extrapolation).
 
-The contract here intentionally mirrors `lumina_st.benchmarks` in spirit so
-both tracks share a familiar surface; the data types diverge because the
-science does.
+The contract here follows the project's shared benchmark-contract
+discipline so related tracks share a familiar surface; the data types
+diverge because the science does.
 """
 
 from .contract import (
