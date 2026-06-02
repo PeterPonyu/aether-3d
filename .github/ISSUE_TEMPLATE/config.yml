@@ -1,0 +1,3 @@
+# Blank issues stay enabled (parity with sibling repos) so audit/automation
+# findings that don't fit a template can still be filed.
+blank_issues_enabled: true

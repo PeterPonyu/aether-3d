@@ -1,0 +1,32 @@
+name: Benchmark
+description: Propose or update a benchmark / evidence contract.
+labels: [benchmark]
+body:
+  - type: textarea
+    id: scope
+    attributes:
+      label: Benchmark scope
+      description: Synthetic or real data; what is being measured?
+    validations:
+      required: true
+  - type: textarea
+    id: artifacts
+    attributes:
+      label: Required artifacts
+      description: Saved files and their schemas.
+    validations:
+      required: true
+  - type: textarea
+    id: metrics
+    attributes:
+      label: Metrics
+      description: What is locked, and what pass gates (if any).
+  - type: checkboxes
+    id: guardrails
+    attributes:
+      label: Guardrails
+      options:
+        - label: Does not vendor or require vendoring DeepSpatial / baseline code.
+          required: true
+        - label: Does not claim model performance until a run lands and is recorded in the claim ledger.
+          required: true

@@ -40,6 +40,11 @@ dependencies = [
   # (sklearn.preprocessing.LabelEncoder); declared explicitly so the package
   # never relies on scanpy's transitive sklearn edge. See issue #119.
   "scikit-learn>=1.3",
+  # Direct top-level imports in aether_3d.benchmarks.{metrics,neighborhood,contract}
+  # (scipy.spatial.cKDTree, scipy.stats.spearmanr/wasserstein_distance,
+  # scipy.sparse.csr_matrix). Declared explicitly so clean installs never rely on
+  # scanpy/anndata transitively pulling scipy in. See issue #232.
+  "scipy>=1.10",
   "pydantic>=2.8",
   "tqdm",
   "einops",
