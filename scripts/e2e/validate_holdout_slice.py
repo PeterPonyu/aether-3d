@@ -72,6 +72,7 @@ from aether_3d.benchmarks.spatial_coherence import chaos_score, pas_score
 from aether_3d.benchmarks.adapters import (
     LinearInterpAdapter,
     NearestSliceAdapter,
+    Stacking25DAdapter,
 )
 
 # Default location of the five cached real MERFISH slices.
@@ -356,12 +357,15 @@ def evaluate_holdout(virtual_slice, held_slice, seed=42, n_domains=5):
 
 
 def evaluate_25d_contrast(slices, held_idx, virtual_slice, held_slice, seed=42):
-    """Run the 2.5D baselines (nearest-slice, linear-interp) on the SAME real
-    holdout and contrast against the continuous flow reconstruction.
+    """Run the 2.5D baselines (nearest-slice, linear-interp, stacking-2.5d) on
+    the SAME real holdout and contrast against the continuous flow reconstruction.
 
     Returns ``{baseline_name: {metric: value}}`` plus a ``continuous`` entry, so
     the emitted table shows continuous-recon vs naive stacking on identical
-    real data (DeepSpatial's core 2.5D-vs-continuous claim).
+    real data (DeepSpatial's core 2.5D-vs-continuous claim). ``stacking-2.5d`` is
+    a clean-room reimplementation of the 2.5D virtual-slice *stacking* strategy
+    (the named competitor in the reference benchmark), included so the contrast
+    carries the canonical stacking floor, not just nearest-copy / linear-blend.
     """
     true_coords = np.asarray(held_slice.obsm["spatial"], dtype=np.float32)
     true_expr = _as_dense(held_slice.X)
@@ -399,7 +403,7 @@ def evaluate_25d_contrast(slices, held_idx, virtual_slice, held_slice, seed=42):
         label_key="cell_class",
         seed=seed,
     )
-    for adapter in (NearestSliceAdapter(), LinearInterpAdapter()):
+    for adapter in (NearestSliceAdapter(), LinearInterpAdapter(), Stacking25DAdapter()):
         try:
             visible = inp.visible_slices()
             volume = adapter._reconstruct(visible, inp)
