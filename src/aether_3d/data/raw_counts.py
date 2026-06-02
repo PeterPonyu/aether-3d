@@ -22,6 +22,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
+import numpy.typing as npt
 
 
 @dataclass(frozen=True)
@@ -48,7 +49,7 @@ class RawCountCheck:
     noninteger_fraction: float
 
 
-def _value_sample(matrix: Any, max_values: int = 200_000) -> np.ndarray:
+def _value_sample(matrix: Any, max_values: int = 200_000) -> npt.NDArray[np.float64]:
     """Return a 1-D float64 sample of ``matrix`` values (sparse- and dense-safe).
 
     For scipy sparse matrices only the stored (nonzero) ``.data`` is inspected:
@@ -56,6 +57,7 @@ def _value_sample(matrix: Any, max_values: int = 200_000) -> np.ndarray:
     matrix, so checking ``.data`` alone is conservative. Large inputs are
     strided (no RNG dependency, deterministic) to bound memory.
     """
+    data: npt.NDArray[np.float64]
     if hasattr(matrix, "toarray"):  # scipy sparse
         data = np.asarray(getattr(matrix, "data", []), dtype=np.float64).ravel()
     else:
