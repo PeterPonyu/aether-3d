@@ -64,9 +64,9 @@ This architecture defines the local Aether3D implementation surface. Publication
 
 ## Prior Art and Audit Boundary
 
-Aether3D is an independent package and manuscript track for continuous 3D spatial-omics reconstruction from serial sections. The public DeepSpatial preprint and repository are treated as prior art for the general research problem and for audit comparison only; Aether3D's user-facing API, documentation, validation plan, figures, and manuscript claims must be written from local evidence.
+Aether3D is an independent package and manuscript track for continuous 3D spatial-omics reconstruction from serial sections. The public prior-art preprint and repository are treated as prior art for the general research problem and for audit comparison only; Aether3D's user-facing API, documentation, validation plan, figures, and manuscript claims must be written from local evidence.
 
-See [BASELINE_COMPARISON.md](./BASELINE_COMPARISON.md) and the frozen audit tree `../baselines/DeepSpatial-original/` for traceability and leakage checks. Claims graduate to the manuscript only through the project claim ledger and reproducible benchmark artifacts, not by inheriting claims from the reference work.
+See [BASELINE_COMPARISON.md](./BASELINE_COMPARISON.md) and the frozen baseline audit tree under `../baselines/` for traceability and leakage checks. Claims graduate to the manuscript only through the project claim ledger and reproducible benchmark artifacts, not by inheriting claims from the reference work.
 
 **Prior-art citation** (to appear in final paper):
 > Yang, Y. et al. "Reconstructing True 3D Spatial Omics at Single-Cell Resolution." bioRxiv (2026).
