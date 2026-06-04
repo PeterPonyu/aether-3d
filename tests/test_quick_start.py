@@ -21,14 +21,16 @@ def _tiny_adatas() -> list[ad.AnnData]:
     rng = np.random.default_rng(0)
     adatas = []
     for z in (0.0, 1.0):
+        # ST-omics raw format: small integer counts, not normal (addresses pure scRNA in tests).
+        X = rng.poisson(2.0, size=(6, 8)).astype(np.float32)
         a = ad.AnnData(
-            X=rng.normal(size=(6, 8)).astype(np.float32),
+            X=X,
             obs={
                 "cell_class": ["T", "B", "T", "B", "T", "B"],
                 "z_coord": [z] * 6,
             },
         )
-        a.obsm["spatial"] = rng.normal(size=(6, 2)).astype(np.float32)
+        a.obsm["spatial"] = rng.uniform(0, 100, size=(6, 2)).astype(np.float32)
         adatas.append(a)
     return adatas
 
