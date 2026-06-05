@@ -71,7 +71,7 @@ def dataset_card_id(paths: Sequence[str]) -> str:
 
     Examples:
         ``["data/processed/lumina_ref_local/sc_reference.h5ad",
-           "data/baselines/stpainter/processed_data/st_COAD_test.h5ad"]``
+           "data/baselines/secondary_ref/processed_data/st_COAD_test.h5ad"]``
         -> ``"lumina_ref_local+processed_data"``
 
         Five MERFISH slices sharing one parent dir ->
