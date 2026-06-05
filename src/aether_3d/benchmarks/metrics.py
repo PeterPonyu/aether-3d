@@ -271,9 +271,9 @@ def voxel_cosine_similarity(
     voxel_size: float | None = None,
     return_per_voxel: bool = False,
 ) -> float | tuple[float, npt.NDArray[np.float64]]:
-    """Voxel-binned cell-type composition cosine similarity (DeepSpatial Fig. 2).
+    """Voxel-binned cell-type composition cosine similarity.
 
-    DeepSpatial's *primary* 3D-reconstruction fidelity metric. Both point sets
+    A spatially-local 3D-reconstruction fidelity metric. Both point sets
     are binned into a single shared voxel grid spanning the union of their
     bounding boxes; each voxel's cell-type *composition* vector (counts per
     cell-type over a shared vocabulary) is formed, and a cosine similarity is
