@@ -20,6 +20,7 @@ from __future__ import annotations
 import warnings
 from typing import Sequence
 
+import anndata as ad
 import numpy as np
 
 # obs columns that, when present and numeric (or numeric-string) and constant
@@ -42,7 +43,7 @@ PHYSICAL_Z_OBS_FIELDS: tuple[str, ...] = (
 PHYSICAL_Z_OBSM_KEYS: tuple[str, ...] = ("spatial3d",)
 
 
-def _slice_physical_z(adata) -> float | None:
+def _slice_physical_z(adata: ad.AnnData) -> float | None:
     """Return the single physical z value for ``adata`` if one is available.
 
     A field qualifies only if it is constant across the slice's cells (a serial
@@ -77,7 +78,7 @@ def _slice_physical_z(adata) -> float | None:
 
 
 def resolve_slice_z(
-    slices: Sequence,
+    slices: Sequence[ad.AnnData],
     fallback_spacing: float = 10.0,
 ) -> tuple[list[float], bool]:
     """Resolve a physical z value per serial slice.
