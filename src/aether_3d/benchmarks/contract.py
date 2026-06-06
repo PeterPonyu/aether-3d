@@ -212,15 +212,30 @@ class VolumeBaseAdapter(ABC):
         )
 
 
-def compute_volume_metrics(volume: ad.AnnData, inp: VolumeAdapterInput) -> dict[str, Any]:
+def compute_volume_metrics(
+    volume: ad.AnnData,
+    inp: VolumeAdapterInput,
+    z_window: float | None = None,
+) -> dict[str, Any]:
     """Geometry + molecular metrics for a reconstructed volume vs held-out truth.
 
     Standard virtual-slice benchmark contract: per-holdout-slice cell-count
     ratio, coordinate RMSE, Chamfer distance, sliced Wasserstein, Moran's-I
-    agreement, spatially matched domain ARI/NMI, cell-type proportion
+    agreement, spatially matched domain ARI/NMI and AMI, cell-type proportion
     Spearman, and Betti-0 topology stability against the truth slice nearest
     to each virtual depth. Aggregate ``mean_*`` keys summarize numeric
     per-slice metrics.
+
+    Args:
+        volume: Reconstructed 3-D volume AnnData.
+        inp: The adapter input carrying slice stack and holdout config.
+        z_window: Half-width of the slab around each truth z used to collect
+            virtual cells for per-depth scoring. When ``None`` (default), the
+            window is derived automatically as half the median inter-slice
+            spacing of ``inp.slices``, which is correct for typical MERFISH /
+            FISH datasets where spacings are O(0.04 mm). Pass an explicit
+            positive float only when you need to override the auto-derived
+            value (e.g. in unit tests with synthetic integer z-values).
     """
     metrics: dict[str, Any] = {
         "n_virtual_cells": int(volume.n_obs),
@@ -237,6 +252,27 @@ def compute_volume_metrics(volume: ad.AnnData, inp: VolumeAdapterInput) -> dict[
         metrics["error"] = f"volume missing obs[{z_key}]"
         return metrics
 
+    # ------------------------------------------------------------------
+    # Determine per-depth z-window (half-width).
+    # When z_window is None we derive from actual inter-slice spacing so
+    # that the window is physically meaningful (e.g. ~0.02 mm for typical
+    # ~0.04 mm MERFISH Bregma spacing) rather than an arbitrary ±0.5.
+    # ------------------------------------------------------------------
+    if z_window is not None:
+        window_eps = float(z_window)
+    else:
+        slice_z_vals: list[float] = []
+        for s in inp.slices:
+            if z_key in s.obs and len(s.obs[z_key]) > 0:
+                slice_z_vals.append(float(np.median(np.asarray(s.obs[z_key], dtype=np.float64))))
+        if len(slice_z_vals) >= 2:
+            sorted_z = np.sort(np.array(slice_z_vals, dtype=np.float64))
+            median_spacing = float(np.median(np.diff(sorted_z)))
+            window_eps = 0.5 * median_spacing if median_spacing > 0 else 0.5
+        else:
+            # Single-slice stack — fall back to previous default.
+            window_eps = 0.5
+
     truth_z = inp.truth_z_values()
     per_slice: list[dict[str, Any]] = []
     for ti, truth in enumerate(inp.truth_slices()):
@@ -244,9 +280,9 @@ def compute_volume_metrics(volume: ad.AnnData, inp: VolumeAdapterInput) -> dict[
         if np.isnan(z_target):
             continue
 
-        # Pull virtual cells within a ±0.5 window of the truth z (configurable)
+        # Pull virtual cells within window_eps of the truth z.
         v_z = volume.obs[z_key].astype(float).values
-        window = np.abs(v_z - z_target) < 0.5
+        window = np.abs(v_z - z_target) < window_eps
         if not window.any():
             per_slice.append({"z_target": z_target, "n_virtual": 0, "error": "no_virtual_cells_at_z"})
             continue
@@ -292,6 +328,7 @@ def compute_volume_metrics(volume: ad.AnnData, inp: VolumeAdapterInput) -> dict[
     metrics["mean_morans_i_agreement"] = _agg("morans_i_agreement")
     metrics["mean_domain_ari"] = _agg("domain_ari")
     metrics["mean_domain_nmi"] = _agg("domain_nmi")
+    metrics["mean_domain_ami"] = _agg("domain_ami")
     metrics["mean_celltype_proportion_spearman"] = _agg("celltype_proportion_spearman")
     metrics["mean_betti0_stability"] = _agg("betti0_stability")
     return metrics
