@@ -55,7 +55,7 @@ _PARENT_REPO_SUBDIRS = (
 
 #: Packages whose versions are captured into ``run_metadata.packages`` when
 #: importable. Absent packages are recorded as the literal string ``"absent"``.
-_VERSIONED_PACKAGES = ("numpy", "scipy", "scanpy", "anndata", "torch", "sklearn")
+_VERSIONED_PACKAGES = ("numpy", "scipy", "scanpy", "anndata", "torch", "sklearn", "skimage")
 
 
 # --------------------------------------------------------------------------- #
@@ -71,7 +71,7 @@ def dataset_card_id(paths: Sequence[str]) -> str:
 
     Examples:
         ``["data/processed/lumina_ref_local/sc_reference.h5ad",
-           "data/baselines/stpainter/processed_data/st_COAD_test.h5ad"]``
+           "data/baselines/secondary_ref/processed_data/st_COAD_test.h5ad"]``
         -> ``"lumina_ref_local+processed_data"``
 
         Five MERFISH slices sharing one parent dir ->
@@ -147,7 +147,7 @@ def _pkg_versions() -> dict[str, str]:
     import importlib.metadata as importlib_metadata
 
     # Map import name -> distribution name where they differ.
-    _dist_name = {"sklearn": "scikit-learn"}
+    _dist_name = {"sklearn": "scikit-learn", "skimage": "scikit-image"}
 
     versions: dict[str, str] = {}
     for name in _VERSIONED_PACKAGES:
@@ -364,6 +364,18 @@ def write_results(
     # absent rather than null for projects that omit it.
     if "interpretability" in run_metadata:
         metadata_payload["interpretability"] = run_metadata["interpretability"]
+    # D9 — pass through scalability/over-claim provenance the runner set, so the
+    # peak-RSS memory column (#343) and the structured fallback-note over-claim
+    # guard actually reach run_metadata.json (shared emitters read these top-level).
+    if "peak_rss_bytes" in run_metadata:
+        metadata_payload["peak_rss_bytes"] = run_metadata["peak_rss_bytes"]
+    if "_fallback_note" in run_metadata:
+        metadata_payload["_fallback_note"] = run_metadata["_fallback_note"]
+    # D10 — single namespaced bucket for genuine repo-specific provenance (e.g.
+    # model, eval_policy) so the top-level schema stays uniform instead of growing
+    # a per-key whitelist. Metrics still belong in the open metrics dict, not here.
+    if "provenance" in run_metadata:
+        metadata_payload["provenance"] = run_metadata["provenance"]
 
     metrics_path = proj_dir / "metrics.json"
     metadata_path = proj_dir / "run_metadata.json"

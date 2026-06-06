@@ -141,6 +141,52 @@ def test_domain_ari_nmi_too_few_cells():
     assert out.get("status") == "too-few-cells"
 
 
+def test_domain_nmi_is_true_nmi_bounded_0_1():
+    """domain_ari_nmi['nmi'] must be true NMI in [0, 1].
+    Previously it stored AMI which can be negative; this pins the fix (#277).
+    """
+    rng = np.random.default_rng(0)
+    # Cluster A vs random noise → low agreement; AMI can be negative, NMI cannot.
+    X_a = np.vstack([
+        rng.normal(0, 1, size=(30, 5)),
+        rng.normal(10, 1, size=(30, 5)),
+    ]).astype(np.float32)
+    # Shuffled version disrupts cluster structure relative to truth.
+    X_b = X_a[rng.permutation(X_a.shape[0])]
+
+    out = domain_ari_nmi(X_a, X_b, n_clusters=2, seed=0)
+    assert "nmi" in out
+    assert "ami" in out
+    # True NMI is always in [0, 1].
+    assert 0.0 <= out["nmi"] <= 1.0, f"NMI must be in [0,1]; got {out['nmi']}"
+    # Identical data must still score high.
+    out_identical = domain_ari_nmi(X_a, X_a.copy(), n_clusters=2, seed=0)
+    assert out_identical["nmi"] > 0.9, f"identical clusters should give NMI≈1; got {out_identical}"
+
+
+def test_domain_nmi_and_ami_coexist_on_empty_and_too_few():
+    """Both 'nmi' and 'ami' keys must be present even in degenerate cases."""
+    empty = np.zeros((0, 3), dtype=np.float32)
+    out_empty = domain_ari_nmi(empty, empty, n_clusters=2, seed=0)
+    assert "nmi" in out_empty and "ami" in out_empty
+
+    too_few = np.zeros((4, 3), dtype=np.float32)
+    out_few = domain_ari_nmi(too_few, too_few, n_clusters=5, seed=0)
+    assert "nmi" in out_few and "ami" in out_few
+
+
+def test_geometry_quartet_includes_domain_ami():
+    """geometry_quartet must expose domain_ami alongside domain_nmi (#277)."""
+    truth = _make_slice(z=1.0, n_cells=60, seed=0)
+    recon = _make_slice(z=1.0, n_cells=55, seed=1)
+    out = geometry_quartet(recon, truth, top_k_hvg=5)
+    assert "domain_ami" in out, f"domain_ami missing from quartet keys: {list(out)}"
+    assert "domain_nmi" in out
+    # NMI must be in [0, 1].
+    if not np.isnan(out["domain_nmi"]):
+        assert 0.0 <= out["domain_nmi"] <= 1.0, f"domain_nmi out of [0,1]: {out['domain_nmi']}"
+
+
 # -- Cell-type proportion -------------------------------------------------
 
 

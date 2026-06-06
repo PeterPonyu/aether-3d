@@ -25,6 +25,7 @@ PKG = "aether_3d"
 REPO_ROOT = Path(__file__).resolve().parents[1]
 VENDORED = REPO_ROOT / "src" / PKG / "results_contract.py"
 CANONICAL = REPO_ROOT.parent / "scripts" / "contract" / "results_contract.py"
+PINNED_SHA = REPO_ROOT / "src" / PKG / "results_contract.sha256"
 
 
 def _import_vendored():
@@ -35,6 +36,29 @@ def _import_vendored():
     if src not in sys.path:
         sys.path.insert(0, src)
     return importlib.import_module(f"{PKG}.results_contract")
+
+
+def test_vendored_matches_pinned_sha():
+    """Self-contained byte-lock: holds WITHOUT the parent canonical present.
+
+    ``scripts/contract/check_sync.py`` writes ``results_contract.sha256`` next
+    to the vendored module. Editing the vendored copy without re-running
+    check_sync (which rewrites both files together) fails here even in a
+    standalone single-repo checkout -- closing the gap where
+    :func:`test_vendored_copy_is_byte_identical_to_canonical` self-skips when
+    the parent orchestration repo is absent.
+    """
+    assert VENDORED.exists(), f"vendored copy missing: {VENDORED}"
+    assert PINNED_SHA.exists(), (
+        f"pinned SHA sidecar missing: {PINNED_SHA}; "
+        "run `python scripts/contract/check_sync.py` from the parent repo"
+    )
+    pinned = PINNED_SHA.read_text().strip()
+    actual = hashlib.sha256(VENDORED.read_bytes()).hexdigest()
+    assert actual == pinned, (
+        f"vendored results_contract.py ({actual}) does not match pinned SHA "
+        f"({pinned}); re-run scripts/contract/check_sync.py"
+    )
 
 
 def test_vendored_copy_is_byte_identical_to_canonical():

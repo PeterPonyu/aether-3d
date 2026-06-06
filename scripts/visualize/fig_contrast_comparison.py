@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""2.5D-baselines-vs-continuous contrast comparison panel (DeepSpatial Fig.2 style).
+"""2.5D-baselines-vs-continuous contrast comparison panel.
 
 This renders the head-to-head fidelity contrast that ``evaluate_25d_contrast``
 (``scripts/e2e/validate_holdout_slice.py``) emits into the holdout metrics

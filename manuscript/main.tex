@@ -199,6 +199,337 @@ Chamfer distance and coordinate RMSE (geometry), sliced 2D Wasserstein
 latent (cluster identity), cell-type proportion Spearman (identity
 composition), and Betti-0 stability via kNN union-find (topology).
 
+\textbf{Metric definitions.}
+\emph{Chamfer distance}: the mean of the per-direction nearest-neighbor
+Euclidean distances between two point clouds $A$ and $B$,
+$d_\text{Ch}(A,B)=\tfrac{1}{2}(\bar{d}_{A\to B}+\bar{d}_{B\to A})$
+($\downarrow$ better).
+\emph{Coordinate RMSE}: root-mean-squared nearest-neighbor distance
+from the reconstruction to truth ($\downarrow$ better).
+\emph{Sliced 2D Wasserstein}: approximation of the 2D Wasserstein
+distance via mean 1D Wasserstein over $n=50$ random projections;
+measures distributional shift in cell position ($\downarrow$ better).
+\emph{Moran's I agreement}: Spearman correlation of per-gene
+Moran's~$I$ statistics~\cite{Moran1950Autocorrelation} computed
+independently on truth and reconstruction, evaluated over the top-$K$
+(default $K=100$) highest-variance genes; measures whether the spatial
+autocorrelation structure of gene expression is preserved
+($\uparrow$ better).
+\emph{Domain ARI / NMI}: KMeans labels fit to the pooled
+truth-plus-reconstruction gene-expression matrix; ARI~\cite{Hubert1985Adjusted}
+and NMI between the two halves measure cluster-identity agreement
+($\uparrow$ better).
+\emph{Cell-type proportion Spearman}: Spearman correlation of per-label
+cell counts between truth and reconstruction ($\uparrow$ better).
+\emph{Betti-0 stability}: fraction of $k$-NN connected components
+preserved after swapping truth cells for reconstructed cells, computed
+via union-find over the joint kNN
+graph~\cite{Edelsbrunner2010PersistentHomology} ($\uparrow$ better).
+Flow-divergence and velocity-anisotropy vector-field diagnostics are
+computed by the same benchmark module when a velocity field is available
+from a trained continuous-3D adapter; they are not applicable to the
+NumPy-only 2.5D baselines.
+
+\subsection{Leave-one-section-out evaluation protocol}
+\label{sec:loso}
+
+The primary evaluation uses a \emph{leave-one-section-out} (LOSO)
+holdout: given $K$ aligned serial sections $\{(\mathbf{X}_k,
+\mathbf{S}_k, z_k)\}_{k=1}^K$, section $k^\star$ is designated the
+held-out truth; the adapter receives the remaining $K-1$ sections as
+visible input and is asked to produce a virtual slice at depth
+$z_{k^\star}$. The protocol iterates over all interior holdout
+positions $k^\star \in \{2, \ldots, K-1\}$ and reports mean~$\pm$~std
+of each metric across holdout rounds.
+
+The audit boundary is enforced mechanically by the
+\texttt{VolumeAdapterInput} contract
+(Section~\ref{sec:contract}): \texttt{visible\_slices()} removes the
+held-out section from the input list before the adapter's \texttt{fit}
+call, and \texttt{truth\_slices()} exposes the truth only to the scorer.
+An adapter that attempts to read beyond \texttt{visible\_slices()} has
+no path to the truth expression matrix --- this is a closed-form
+data-leakage guard rather than an honor system.
+Per-holdout-slice scores are stored in a structured JSON keyed by
+$(k^\star, \text{method})$ so that any single evaluation point can be
+re-run independently with its stored provenance record (device, git SHA,
+torch and CUDA versions, hostname, seed).
+The aggregated means and standard deviations across all holdout rounds
+constitute the primary comparison surface
+(Table~\ref{tab:loso-gene}).
+
+\subsection{Baselines}
+\label{sec:baselines}
+
+Three parameter-free 2.5D baselines and the \textsc{Aether3D}
+continuous-3D model are wired through the same
+\texttt{VolumeBaseAdapter} contract and scored under the identical LOSO
+protocol.
+
+\textbf{Nearest-section} (\texttt{nearest-slice}): the held-out depth
+$z_{k^\star}$ is reconstructed by copying all cells from the single
+closest visible section and overwriting their $z$ coordinate to the
+target depth. This is the lowest possible 2.5D floor: it uses real
+expression and real 2D positions with no interpolation.
+
+\textbf{Linear interpolation} (\texttt{linear-interp}): each
+virtual-depth cell is produced by linearly interpolating expression
+vectors and 2D coordinates between the two bracketing visible sections.
+Cells are paired by nearest-neighbour in 2D (the only correspondence
+signal available without ground-truth cell tracks) and the interpolation
+weight is $w = (z_{k^\star} - z_a)/(z_b - z_a)$. The pairing is
+deterministic in cell content (ordered by \texttt{lexsort} on 2D
+coordinates) so reported numbers are invariant to input row order.
+
+\textbf{2.5D stacking} (\texttt{stacking-2.5d}): the canonical
+clean-room reimplementation of the 2.5D virtual-slice stacking strategy.
+A virtual section at depth $z$ is assembled by stacking
+$k_a = \lfloor(1-w)\,n_a\rceil$ cells from the lower flanking section
+and $k_b = \lfloor w\,n_b\rceil$ from the upper one, selected by an
+evenly-spaced decimation over a lexsort-deterministic spatial ordering
+so the subset is spatially representative and independent of row order.
+Every selected cell carries its real expression vector and real 2D
+position; its $z$ coordinate is overwritten to the target depth. There
+is no learned model and no gene-wise smoothing, so any quality gap
+between this baseline and a continuous method is attributable to the
+method, not to artefacts on the baseline side.
+
+\textbf{Aether continuous-3D} (\texttt{aether}): the
+\textsc{Aether3D} reconstructor is wrapped in an \texttt{AetherAdapter}
+that implements the identical \texttt{VolumeBaseAdapter} interface and
+is scored under the same LOSO protocol as the three 2.5D baselines.
+The adapter calls \texttt{AetherReconstructor.fit} on the visible
+slices, then \texttt{reconstruct\_continuous\_volume} at the held-out
+depth. Physical-$z$ remapping from the reconstructor's internal depth
+index back onto the observed $\mu$m values is handled inside the
+adapter, so the scorer always operates on the same physical-$\mu$m
+coordinate system as the baselines. Results are placeholders pending a
+validated run (Table~\ref{tab:loso-gene}); no performance claim over
+baselines is asserted here.
+
+\subsection{Fair z-axis: physical micrometres vs.\ synthetic uniform
+  spacing}
+\label{sec:fair-z}
+
+Serial-section datasets carry \emph{physically irregular}
+inter-section gaps: adjacent sections may be separated by anywhere from
+tens to several hundred micrometres depending on cutting protocol,
+tissue heterogeneity, and section loss. All four adapters in this
+benchmark consume physical $z_k$ values in micrometres as stored in
+\texttt{obs["z\_coord"]} rather than a synthetic integer index.
+
+This distinction matters asymmetrically across method families. The
+2.5D baselines (nearest-section, linear interpolation, stacking) are
+\emph{scale-invariant}: their interpolation weight
+$w = (z_{k^\star} - z_a)/(z_b - z_a)$ is a ratio that normalises out
+any common rescaling of the $z$ axis.  A 2.5D method asked to
+interpolate between $z_a = 0\,\mu$m and $z_b = 200\,\mu$m at
+$z_{k^\star} = 100\,\mu$m yields $w = 0.5$, the same as if the
+coordinates were integers $0$, $1$, $2$.
+
+The \textsc{Aether3D} continuous-3D model is \emph{z-conditioned}: the
+velocity field takes physical $z$ as an input to the adaptive
+normalisation layer (Section~\ref{sec:uot}), and the ODE integration
+time is derived from the physical spacing between slices. Evaluating
+a $z$-conditioned model on a synthetic uniform-spacing approximation
+introduces a systematic bias when real sections are irregularly spaced:
+the model is trained and queried at wrong time intervals, inflating
+reconstruction error independently of model quality.
+
+Feeding physical $\mu$m coordinates to both 2.5D baselines (which are
+unaffected by coordinate scale) and to \textsc{Aether3D} (which depends
+on them) is therefore a methodological contribution to fair evaluation:
+it ensures that any observed difference between the continuous-3D method
+and the 2.5D floor reflects the model's ability to exploit inter-section
+geometry rather than an artefact of coordinate normalisation. The
+contract enforces this at ingestion time: the serial data loader raises
+\texttt{ValueError} if \texttt{obs["z\_coord"]} is absent, preventing
+silent fallback to synthetic uniform spacing.
+
+\subsection{Falsifiability controls}
+\label{sec:falsif}
+
+The LOSO evaluation is accompanied by two synthetic controls that
+verify whether the metric-plus-protocol combination can
+\emph{detect a difference} between method families, independent of
+any real-data claim. Both are generated from one parametric field in
+which the \emph{same} cells are observed at every section, each tracing
+a deterministic trajectory $\mathbf{p}(z) = \mathbf{p}_0 +
+\mathbf{v}\,z + c\,\mathbf{d}\,z^2$ across $z$ (with $z$ centred so the
+held-out interior section sits at $z=0$). A single curvature knob $c$
+switches between the two regimes.
+
+\textbf{Negative control --- regime where 2.5D is provably optimal
+($c = 0$).}
+With zero curvature the trajectories are linear, so the true held-out
+midpoint section is \emph{exactly} the linear blend of its two flanking
+sections (the $\mathbf{v}\,z$ term cancels at the centred midpoint).
+Linear interpolation is therefore near-exact and a continuous model has
+nothing to gain: a tie or loss for the learned adapter is the correct
+outcome. A spurious win for the learned model in this regime would
+indicate a calibration failure of the metrics rather than a genuine
+advantage.
+
+\textbf{Positive control --- regime where linear interpolation is
+provably biased ($c > 0$).}
+With nonzero curvature the quadratic bend makes the true midpoint differ
+from the linear blend of the flanking sections by a fixed offset
+$c\,\mathbf{d}$, so linear interpolation systematically misplaces cells
+and is provably biased on Chamfer distance and coordinate RMSE.  A
+continuous-flow model conditioned on physical $z$ has the
+representational capacity to recover the curve; a scale-invariant 2.5D
+interpolator does not.  This control establishes that the benchmark
+\emph{can} detect a continuous-method advantage when one exists, without
+asserting that \textsc{Aether3D} achieves it on real data (that claim
+remains \texttt{planned} in the claim ledger; see
+Table~\ref{tab:loso-gene}).
+
+Both controls are generated deterministically and scored through the
+identical adapter contract.  The \emph{validity} of the controls
+themselves --- linear interpolation near-exact in the negative regime
+and provably biased in the positive regime --- is asserted in the test
+suite, so a regression in the metric or protocol implementation surfaces
+immediately.
+
+% ---------------------------------------------------------------------------
+% Placeholder tables and figures (numbers TBD)
+% ---------------------------------------------------------------------------
+
+\subsection{Placeholder result tables and figures}
+\label{sec:placeholders}
+
+The following tables and figures are structural stubs. Captions describe
+what each item will contain; all numerical entries are marked
+\textbf{TBD} and will be filled once the claim ledger entries for the
+relevant rows reach \texttt{validated} status with linked, reproducible
+artifacts. The table and figure environments are kept here so the
+reference labels are stable and the document compiles cleanly.
+
+\begin{table}[ht]
+\centering
+\caption{LOSO gene-recovery table --- mean~$\pm$~std of each metric
+across leave-one-section-out rounds, all adapters scored through the
+same audited contract. Adapters: \texttt{nearest-slice},
+\texttt{linear-interp}, \texttt{stacking-2.5d}, \texttt{aether}.
+Metrics: Chamfer ($\downarrow$), coord.\ RMSE ($\downarrow$),
+sliced Wasserstein ($\downarrow$), Moran's I agreement ($\uparrow$),
+domain ARI ($\uparrow$), domain NMI ($\uparrow$), cell-type proportion
+Spearman ($\uparrow$), Betti-0 ($\uparrow$).
+\textbf{All entries are TBD --- pending validated run on real serial
+data.}}
+\label{tab:loso-gene}
+\small
+\begin{tabular}{lcccccccc}
+\toprule
+Method & Chamfer & RMSE & SW$_{2}$ & Moran's I & ARI & NMI & Spearman & Betti-0 \\
+\midrule
+nearest-slice  & TBD & TBD & TBD & TBD & TBD & TBD & TBD & TBD \\
+linear-interp  & TBD & TBD & TBD & TBD & TBD & TBD & TBD & TBD \\
+stacking-2.5d  & TBD & TBD & TBD & TBD & TBD & TBD & TBD & TBD \\
+aether         & TBD & TBD & TBD & TBD & TBD & TBD & TBD & TBD \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[ht]
+\centering
+\caption{Per-region cell-type proportion Spearman --- Spearman
+correlation of per-cell-type counts between reconstruction and truth,
+reported separately for each annotated spatial region
+(e.g., cortical layer, hypothalamic nucleus) on the holdout dataset.
+Columns correspond to regions; rows to adapters.
+\textbf{All entries are TBD --- pending validated run.}}
+\label{tab:per-region-spearman}
+\small
+\begin{tabular}{lccc}
+\toprule
+Method & Region 1 & Region 2 & $\cdots$ \\
+\midrule
+nearest-slice  & TBD & TBD & $\cdots$ \\
+linear-interp  & TBD & TBD & $\cdots$ \\
+stacking-2.5d  & TBD & TBD & $\cdots$ \\
+aether         & TBD & TBD & $\cdots$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[ht]
+\centering
+\caption{Cross-platform summary --- mean Chamfer distance and Moran's I
+agreement on each validated dataset (e.g., MERFISH mouse hypothalamus,
+BRCA IMC, Visium serial ladder), broken down by adapter. This table will
+exist only when at least two distinct real-data platforms have completed
+the LOSO protocol.
+\textbf{All entries are TBD --- pending multi-platform validated runs.}}
+\label{tab:cross-platform}
+\small
+\begin{tabular}{lccc}
+\toprule
+ & \multicolumn{2}{c}{Platform A} & Platform B \\
+\cmidrule(lr){2-3}
+Method & Chamfer & Moran's I & Chamfer \\
+\midrule
+nearest-slice  & TBD & TBD & TBD \\
+linear-interp  & TBD & TBD & TBD \\
+stacking-2.5d  & TBD & TBD & TBD \\
+aether         & TBD & TBD & TBD \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[ht]
+  \centering
+  \fbox{\parbox{0.9\textwidth}{\centering\vspace{2em}
+  \textbf{[Figure stub: intermediate-depth montage]}\\[0.5em]
+  Side-by-side comparison of truth vs.\ reconstructed virtual sections
+  at three intermediate depths per holdout round. Columns: truth,
+  nearest-slice, linear-interp, stacking-2.5d, aether. Rows: holdout
+  depths $z_{k^\star}$ (e.g., $z_2$, $z_3$, $z_4$ for a 6-section
+  stack). Cell positions shown as scatter; colour = cell type.\\[0.5em]
+  \textbf{TBD --- pending validated run on real serial data.}
+  \vspace{2em}}}
+  \caption{Intermediate-depth reconstruction montage. Each panel shows
+  cells coloured by annotated cell type at a held-out intermediate
+  depth; the truth section (left) is compared to each adapter's
+  reconstruction. \textbf{TBD --- pending validated run.}}
+  \label{fig:depth-montage}
+\end{figure}
+
+\begin{figure}[ht]
+  \centering
+  \fbox{\parbox{0.9\textwidth}{\centering\vspace{2em}
+  \textbf{[Figure stub: velocity/warp field]}\\[0.5em]
+  Visualisation of the \textsc{Aether3D} learned velocity field over
+  the 3D tissue volume. Arrows or streamlines represent the
+  ODE-integrated flow from section $z_k$ to $z_{k+1}$; colour encodes
+  velocity magnitude. Divergence and anisotropy diagnostics
+  are displayed as scalar heat maps.\\[0.5em]
+  \textbf{TBD --- pending trained model run with velocity-field output
+  enabled.}
+  \vspace{2em}}}
+  \caption{Velocity/warp field from the continuous-3D adapter.
+  Streamlines show the inferred cell-movement field between adjacent
+  sections; scalar panels show flow divergence and velocity anisotropy.
+  \textbf{TBD --- pending trained model run.}}
+  \label{fig:velocity-field}
+\end{figure}
+
+\begin{figure}[ht]
+  \centering
+  \fbox{\parbox{0.9\textwidth}{\centering\vspace{2em}
+  \textbf{[Figure stub: marker concordance]}\\[0.5em]
+  Per-gene Pearson correlation (reconstruction vs.\ truth, spatially
+  matched) for the top marker genes of each annotated cell type,
+  shown as a dot plot or heatmap. Rows = genes; columns = adapters.
+  Reference line at $r = 0$ marks the chance level.\\[0.5em]
+  \textbf{TBD --- pending validated run.}
+  \vspace{2em}}}
+  \caption{Marker-gene expression concordance. Spatially-matched
+  per-gene Pearson correlation between reconstruction and truth for
+  top cell-type marker genes. \textbf{TBD --- pending validated run.}}
+  \label{fig:marker-concordance}
+\end{figure}
+
 \section{Results}
 \label{sec:results}
 
