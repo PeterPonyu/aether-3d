@@ -2,11 +2,13 @@
 """Leave-one-out holdout reconstruction on REAL MERFISH serial slices (Aether3D).
 
 This script replaces the previous synthetic-slice path. It loads the five cached
-MERFISH mouse-hypothalamus slices, intersects their gene panels, injects a
-physical ``z_coord = idx * 10`` per slice, and runs a leave-one-out holdout
-reconstruction over the three INTERIOR slices (indices 1, 2, 3; the boundary
-slices 0 and 4 are never held out because interpolation needs neighbours on both
-sides).
+MERFISH mouse-hypothalamus slices, intersects their gene panels, derives a REAL
+physical ``z_coord`` per slice from the data's anterior-posterior Bregma metadata
+(``obs['slice_id']`` mm in the cached baseline; falls back to a configurable
+synthetic spacing with ``z_is_physical=False`` only when absent — issue #222),
+and runs a leave-one-out holdout reconstruction over the three INTERIOR slices
+(indices 1, 2, 3; the boundary slices 0 and 4 are never held out because
+interpolation needs neighbours on both sides).
 
 For each held-out interior slice ``h`` the continuous volume is reconstructed from
 the two bracketing neighbour slices ``(h-1, h+1)`` (the model is fit on that
@@ -46,6 +48,7 @@ sys.path.insert(0, str(project_root))
 
 from aether_3d.config.aether_config import Aether3DConfig
 from aether_3d.core.aether_reconstructor import AetherReconstructor
+from aether_3d.data.physical_z import resolve_slice_z
 from aether_3d.data.trajectory_dataset import SerialSliceTrajectoryDataset
 from aether_3d.models.aether_velocity_field import MultiModalVelocityField
 from aether_3d.modules.aether_flow_module import AetherFlowModule
@@ -83,6 +86,9 @@ DEFAULT_DATA_DIR = (
 # Interior slices that can be held out (boundary slices 0 and 4 cannot, since
 # the interpolation needs a neighbour on both sides).
 INTERIOR_SLICES = (1, 2, 3)
+# Fallback spacing (issue #222): used ONLY when no physical inter-slice z
+# metadata (obs['Bregma'] / obs['slice_id'] / obsm['spatial3d']) is available.
+# Configurable via --fallback-spacing; never assume this is the real spacing.
 SLICE_SPACING = 10.0
 
 
@@ -101,15 +107,22 @@ def get_device() -> torch.device:
 
 
 def load_real_merfish_slices(
-    data_dir: str, n_slices: int = 5, max_cells: int | None = None, seed: int = 42
+    data_dir: str,
+    n_slices: int = 5,
+    max_cells: int | None = None,
+    seed: int = 42,
+    fallback_spacing: float = SLICE_SPACING,
 ):
     """Load the real MERFISH slices, intersect gene panels, inject ``z_coord``.
 
-    Returns ``(slices, dataset_paths, n_dropped_genes, n_shared_genes)`` where
-    ``slices`` is a list of AnnData ordered by slice index (== physical z order),
-    every slice subset to the SAME sorted shared gene panel, with
-    ``.obs['z_coord'] = idx * 10`` injected and ``.obsm['spatial']`` /
-    ``.obs['cell_class']`` preserved.
+    Returns ``(slices, dataset_paths, n_dropped_genes, n_shared_genes,
+    z_is_physical)`` where ``slices`` is a list of AnnData ordered by slice index
+    (== physical z order), every slice subset to the SAME sorted shared gene
+    panel, with ``.obs['z_coord']`` injected from REAL physical metadata when
+    present (issue #222) and ``.obsm['spatial']`` / ``.obs['cell_class']``
+    preserved. ``z_is_physical`` is True when the injected z came from a physical
+    field (e.g. Bregma / slice_id mm), False when the synthetic
+    ``idx * fallback_spacing`` ladder was used.
 
     The reconstructor builds a dense ``n0 x n1`` UOT coupling whose flattened
     size feeds ``torch.multinomial`` (hard cap 2**24 categories). With ~5.5k
@@ -147,8 +160,6 @@ def load_real_merfish_slices(
         X = sub.X
         X = X.toarray() if hasattr(X, "toarray") else np.asarray(X)
         sub.X = X.astype(np.float32)
-        # Inject the physical z-coordinate (matches verify_aether_pipeline.py).
-        sub.obs["z_coord"] = float(idx) * SLICE_SPACING
         # Schema sanity: spatial coords + cell_class must be present.
         if "spatial" not in sub.obsm:
             raise KeyError(f"slice {idx} missing .obsm['spatial']")
@@ -157,7 +168,14 @@ def load_real_merfish_slices(
         sub.obs["cell_class"] = pd.Categorical(sub.obs["cell_class"].astype(str))
         slices.append(sub)
 
-    return slices, dataset_paths, int(n_dropped), int(len(shared))
+    # Issue #222: derive each slice's physical z from real metadata
+    # (obs['Bregma'] / obs['slice_id'] mm / obsm['spatial3d']); only fall back to
+    # the synthetic idx*fallback_spacing ladder when no physical field exists.
+    z_values, z_is_physical = resolve_slice_z(slices, fallback_spacing=fallback_spacing)
+    for sub, z in zip(slices, z_values):
+        sub.obs["z_coord"] = float(z)
+
+    return slices, dataset_paths, int(n_dropped), int(len(shared)), z_is_physical
 
 
 def load_serial_h5ad(
@@ -269,7 +287,7 @@ def load_serial_h5ad(
     return slices, [str(h5ad_path)], int(n_dropped), int(n_shared), ordered, z_uniform
 
 
-def reconstruct_holdout(neighbor_slices, held_slice, cfg, device, seed, spacing=SLICE_SPACING):
+def reconstruct_holdout(neighbor_slices, held_slice, cfg, device, seed):
     """Train on ``neighbor_slices`` and reconstruct the virtual mid-slice.
 
     ``neighbor_slices`` are the two slices on either side of the held-out slice;
@@ -311,13 +329,18 @@ def reconstruct_holdout(neighbor_slices, held_slice, cfg, device, seed, spacing=
             f"loss {epoch_loss / max(len(loader), 1):.4f}"
         )
 
-    # Reconstruct between the two neighbour slices (thickness == 2*spacing so the
-    # midpoint d=0.5 maps to the held-out slice z).
+    # Reconstruct between the two neighbour slices. Thickness is the physical
+    # z-gap between the bracketing neighbours (issue #222: derived from the real
+    # z_coord injected on each slice, not a hard-coded 2*SLICE_SPACING), so the
+    # midpoint d=0.5 maps to the held-out slice z regardless of unit/spacing.
+    z_lo = float(neighbor_slices[0].obs["z_coord"].iloc[0])
+    z_hi = float(neighbor_slices[1].obs["z_coord"].iloc[0])
+    thickness = abs(z_hi - z_lo)
     recon = AetherReconstructor(cfg)
     recon.setup_data(neighbor_slices)
     recon.model = model.to(torch.device("cpu"))  # reconstructor runs on CPU
     volume = recon.reconstruct_continuous_volume(
-        neighbor_slices, thickness=2.0 * spacing, num_depths=3
+        neighbor_slices, thickness=thickness, num_depths=3
     )
 
     # Decode predicted cell-class labels from the velocity-field class head
@@ -560,13 +583,26 @@ def main(args: argparse.Namespace) -> None:
             )
         )
         dataset_label = Path(args.h5ad).parent.name
+        # openST/HNSCC z_coord = section ORDINALS (non-uniform, NOT physical um):
+        # cross-slice flow stays descriptive, never physically grounded (#291).
+        z_is_physical = False
     else:
         print("\n[INFO] Loading REAL MERFISH serial slices...")
-        slices, dataset_paths, n_dropped, n_shared = load_real_merfish_slices(
-            args.data_dir, n_slices=5, max_cells=args.max_cells, seed=seed
+        slices, dataset_paths, n_dropped, n_shared, z_is_physical = (
+            load_real_merfish_slices(
+                args.data_dir,
+                n_slices=5,
+                max_cells=args.max_cells,
+                seed=seed,
+                fallback_spacing=args.fallback_spacing,
+            )
         )
         section_ids = [str(i) for i in range(len(slices))]
         z_uniform = True
+        z_source = "PHYSICAL (real metadata)" if z_is_physical else (
+            f"SYNTHETIC (idx*{args.fallback_spacing} fallback)"
+        )
+        print(f"  z source: {z_source}; z_is_physical={z_is_physical}")
         dataset_label = "merfish_mouse_hypothalamus"
     z_values = [float(s.obs["z_coord"].iloc[0]) for s in slices]
     for idx, s in enumerate(slices):
@@ -603,11 +639,12 @@ def main(args: argparse.Namespace) -> None:
         print(f"\n=== Holdout interior slice {h} (fit on neighbours h-1, h+1) ===")
         neighbor_slices = [slices[h - 1], slices[h + 1]]
         held_slice = slices[h]
-        # Per-holdout half-gap so the d=0.5 virtual plane lands at the held-out
-        # z even when section spacing is non-uniform (openST: irregular z gaps).
-        spacing = max((z_values[h + 1] - z_values[h - 1]) / 2.0, 1e-6)
+        # reconstruct_holdout derives the per-holdout thickness from the real
+        # z_coord gap of the bracketing neighbours (abs(z_hi - z_lo)), so the
+        # d=0.5 virtual plane lands on the held-out z even for non-uniform
+        # spacing (openST: irregular z ordinals; MERFISH: physical mm).
         virtual_slice, volume = reconstruct_holdout(
-            neighbor_slices, held_slice, cfg, device, seed, spacing=spacing
+            neighbor_slices, held_slice, cfg, device, seed
         )
         print(
             f"  reconstructed virtual slice: {virtual_slice.shape[0]} cells "
@@ -751,6 +788,7 @@ def main(args: argparse.Namespace) -> None:
             f"over interior slices {sorted(per_holdout.keys())} "
             f"({n_holdout} reconstruction passes)"
         )
+        # openST/HNSCC: z_coord = section ORDINALS, NOT physical um (issue #291).
         z_desc = (
             f"top-{n_shared} HVG of {n_shared + n_dropped} ({n_dropped} dropped); "
             f"z_coord = section ordinals "
@@ -762,11 +800,30 @@ def main(args: argparse.Namespace) -> None:
             f"Real 5-slice MERFISH leave-one-out holdout over interior slices "
             f"{sorted(per_holdout.keys())} ({n_holdout} reconstruction passes)"
         )
+        # MERFISH: z from real Bregma/slice_id mm metadata when present (#222),
+        # else synthetic idx*fallback_spacing ladder (z_is_physical=False).
+        merfish_z = (
+            "physical (real Bregma/slice_id metadata)"
+            if z_is_physical
+            else f"SYNTHETIC fallback idx*{args.fallback_spacing} (no physical metadata found)"
+        )
         z_desc = (
             f"shared gene panel {n_shared} genes ({n_dropped} dropped on "
-            f"intersection); z_coord = idx*{SLICE_SPACING}; "
+            f"intersection); z source: {merfish_z} (z_is_physical={z_is_physical}); "
             f"MERFISH counts used as-is (no normalization)"
         )
+    # Flow-divergence / velocity-anisotropy are PHYSICALLY GROUNDED only when z
+    # is physical (MERFISH with real Bregma/slice_id, issue #222). For the
+    # openST/HNSCC --h5ad path z_is_physical is always False (z = section
+    # ordinals), so the clause stays DESCRIPTIVE — never a physical claim.
+    flow_clause = (
+        " flow_*_divergence and velocity_anisotropy are PHYSICALLY GROUNDED "
+        "(z derived from real inter-slice spacing; z_is_physical=true)."
+        if z_is_physical
+        else " DESCRIPTIVE (z not physical: section ordinals / synthetic "
+        "fallback, no physical cross-slice grounding): flow_*_divergence and "
+        "velocity_anisotropy."
+    )
     notes = (
         f"{data_desc}; {z_desc}; "
         f"per-slice cell cap for reconstruction pairing: "
@@ -779,9 +836,7 @@ def main(args: argparse.Namespace) -> None:
         f"sliced_wasserstein_2d, domain_ari/nmi, celltype_proportion_spearman, "
         f"celltype_distribution_cosine, betti0_stability, chaos_*, pas_*, and the "
         f"2.5D-vs-continuous contrast_* keys (continuous flow vs nearest-slice / "
-        f"linear-interp baselines on the identical real holdout). DESCRIPTIVE "
-        f"(z synthetic = idx*spacing, no physical cross-slice grounding): "
-        f"flow_*_divergence and velocity_anisotropy."
+        f"linear-interp baselines on the identical real holdout)." + flow_clause
     )
     if n_holdout == 1:
         notes += " Single-holdout fallback; loo_gene_pearson_mean=null."
@@ -789,6 +844,17 @@ def main(args: argparse.Namespace) -> None:
     # 4. Emit via the vendored uniform contract.
     central = interior[len(interior) // 2]
     n_obs_primary = int(slices[central].shape[0])  # central interior slice
+    # Issue #222: z_is_physical gates every physical-spacing-dependent metric.
+    # openST/HNSCC z = section ordinals → z_is_physical=False → DESCRIPTIVE only.
+    z_caveat = (
+        "z derived from real inter-slice spacing (z_is_physical=true): "
+        "flow_*_divergence and velocity_anisotropy ARE physically grounded"
+        if z_is_physical
+        else "flow-divergence (flow_*_divergence) and velocity_anisotropy are "
+        "DESCRIPTIVE only: z is not physical (section ordinals / synthetic "
+        "fallback), so the velocity field's cross-slice component is not "
+        "physically grounded"
+    )
     run_metadata = {
         "dataset_paths": dataset_paths,
         "n_obs": n_obs_primary,
@@ -802,6 +868,13 @@ def main(args: argparse.Namespace) -> None:
         "normalization": {"applied": False, "method": "none"},
         "interpretability": {
             "model_is_learned": True,
+            # Issue #222: machine-readable flag gating physical-spacing-dependent
+            # metrics/figures. True iff z_coord came from real metadata (Bregma/
+            # slice_id mm / spatial3d); False when the synthetic fallback ladder
+            # was used. Nested under interpretability because the uniform results
+            # contract only passes through this recognized subtree verbatim.
+            "z_is_physical": bool(z_is_physical),
+            "z_fallback_spacing": float(args.fallback_spacing),
             "encoder": (
                 "multi-modal flow-matching velocity field (DiT-style) trained "
                 "per holdout via UOT-coupled serial-slice trajectories"
@@ -812,9 +885,7 @@ def main(args: argparse.Namespace) -> None:
                 "real slice is the target; no external ground-truth label used",
                 f"trained for {args.max_epochs} epochs per holdout for tractable "
                 "wall time; metrics scale with epoch budget",
-                "flow-divergence (flow_*_divergence) and velocity_anisotropy are "
-                "DESCRIPTIVE only: z is synthetic (idx*spacing), so the velocity "
-                "field's cross-slice component is not physically grounded",
+                z_caveat,
                 "CHAOS/PAS domains are seeded KMeans clusters of expression "
                 "(no external domain labels); chaos_*/pas_* characterise spatial "
                 "coherence of recon vs truth domains, not a GT-domain agreement",
@@ -840,7 +911,14 @@ def main(args: argparse.Namespace) -> None:
                     "pas_recon",
                     "contrast_*",
                 ],
-                "descriptive_z_synthetic": [
+                # Flow/velocity metrics depend on the cross-slice z component;
+                # they are descriptive iff z is synthetic, physical otherwise
+                # (issue #222).
+                (
+                    "descriptive_z_synthetic"
+                    if not z_is_physical
+                    else "physical_z_grounded"
+                ): [
                     "flow_mean_abs_divergence",
                     "flow_max_abs_divergence",
                     "flow_rms_divergence",
@@ -918,6 +996,17 @@ if __name__ == "__main__":
         type=int,
         default=5,
         help="Number of flow-matching training epochs per holdout pass",
+    )
+    parser.add_argument(
+        "--fallback-spacing",
+        dest="fallback_spacing",
+        type=float,
+        default=SLICE_SPACING,
+        help=(
+            "Inter-slice z spacing used ONLY when no physical metadata "
+            "(obs['Bregma']/obs['slice_id']/obsm['spatial3d']) is present; sets "
+            "z_is_physical=False (issue #222)."
+        ),
     )
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument(
