@@ -30,11 +30,13 @@ def _slice(
     obs: dict[str, list] = {}
     if with_label:
         obs["cell_class"] = ["T", "B", "T", "B"]
-    a = ad.AnnData(X=rng.normal(size=(4, 5)).astype("float32"), obs=obs or None)
+    # Proper ST raw count format (small poisson) for sanity, not gaussian scRNA noise.
+    X = rng.poisson(1.8, size=(4, 5)).astype("float32")
+    a = ad.AnnData(X=X, obs=obs or None)
     if with_z:
         a.obs["z_coord"] = [0.0, 0.0, 0.0, 0.0]
     if with_spatial:
-        a.obsm["spatial"] = rng.normal(size=(4, 2)).astype("float32")
+        a.obsm["spatial"] = rng.uniform(0, 50, size=(4, 2)).astype("float32")
     return a
 
 

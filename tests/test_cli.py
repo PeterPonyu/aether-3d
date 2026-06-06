@@ -13,11 +13,13 @@ from aether_3d.cli import reconstruct
 def _write_synthetic_slices(tmp_path: Path, n_slices: int = 3, n_cells: int = 12, n_genes: int = 8) -> Path:
     rng = np.random.default_rng(0)
     for i, z in enumerate(np.linspace(0.0, float(n_slices - 1), n_slices)):
-        a = ad.AnnData(X=rng.normal(size=(n_cells, n_genes)).astype(np.float32))
+        # Proper small ST raw counts (poisson) to match real data format used by cards/fetch.
+        X = rng.poisson(2.2, size=(n_cells, n_genes)).astype(np.float32)
+        a = ad.AnnData(X=X)
         # Aether3DConfig defaults: label_key='cell_class', z_key='z_coord'.
         a.obs["cell_class"] = (["T", "B"] * ((n_cells + 1) // 2))[:n_cells]
         a.obs["z_coord"] = [float(z)] * n_cells
-        a.obsm["spatial"] = rng.normal(size=(n_cells, 2)).astype(np.float32)
+        a.obsm["spatial"] = rng.uniform(0, 80, size=(n_cells, 2)).astype(np.float32)
         a.write_h5ad(tmp_path / f"slice_{i:02d}.h5ad")
     return tmp_path
 

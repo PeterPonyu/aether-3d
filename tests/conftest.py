@@ -35,15 +35,18 @@ def make_aether_slices() -> Callable[..., list[ad.AnnData]]:
         rng = np.random.default_rng(seed)
         slices: list[ad.AnnData] = []
         for z in range(n_slices):
+            # Use poisson raw counts to follow real ST-omics data format
+            # (non-negative integer-like, not normalized scRNA-style or gaussian).
+            X = rng.poisson(lam=2.5, size=(n_cells, n_genes)).astype(np.float32)
             adata = ad.AnnData(
-                X=rng.normal(size=(n_cells, n_genes)).astype(np.float32),
+                X=X,
                 obs={
                     "cell_class": ["T", "B"] * (n_cells // 2)
                     + (["T"] if n_cells % 2 else []),
                     "z_coord": [float(z)] * n_cells,
                 },
             )
-            adata.obsm["spatial"] = rng.normal(size=(n_cells, 2)).astype(np.float32)
+            adata.obsm["spatial"] = rng.uniform(0, 100, size=(n_cells, 2)).astype(np.float32)
             slices.append(adata)
         return slices
 
