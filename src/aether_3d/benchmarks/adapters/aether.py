@@ -13,6 +13,7 @@ slice's per-depth metrics line up.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 import anndata as ad
@@ -41,6 +42,7 @@ class AetherAdapter(VolumeBaseAdapter):
         depth: int = 2,
         num_heads: int = 2,
         patch_size: int = 4,
+        checkpoint_path: str | Path | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(**kwargs)
@@ -49,12 +51,89 @@ class AetherAdapter(VolumeBaseAdapter):
         # convergence inside a single bounded benchmark call is neither the
         # contract's purpose nor claim-bearing (no "Aether beats X" assertion is
         # made here); set max_epochs>0 to train before reconstructing.
+        #
+        # checkpoint_path (issue #285/#288) loads pre-trained weights instead of
+        # training inline, so a converged model can be scored through the SAME
+        # audited contract as the baselines: train once -> save -> benchmark.
+        # When set, it takes precedence over max_epochs (no inline training).
         self.max_epochs = max_epochs
         self.num_depths = num_depths
         self.hidden_size = hidden_size
         self.depth = depth
         self.num_heads = num_heads
         self.patch_size = patch_size
+        self.checkpoint_path = Path(checkpoint_path) if checkpoint_path else None
+
+    def _load_weights(self, recon: AetherReconstructor) -> None:
+        """Load pre-trained velocity-field weights into ``recon`` (#285/#288).
+
+        Accepts either (a) a raw ``MultiModalVelocityField`` ``state_dict`` or
+        (b) a Lightning checkpoint whose nested ``state_dict`` carries
+        ``model.`` / ``ema_model.`` prefixes. EMA weights are preferred when
+        present because the reconstructor's inference path uses the EMA model
+        after training. Loaded with ``strict=False`` so transport buffers /
+        shape-compatible subsets apply without a byte-identical module.
+
+        Raises unless the checkpoint **completely** populates the field — a
+        partial (or zero) match would otherwise let a claim-bearing benchmark
+        score a mostly/fully randomly initialised field (a dim/key mismatch must
+        fail loudly, not pass).
+        """
+        import torch
+
+        if recon.model is None:  # pragma: no cover - guarded by setup_data above
+            raise RuntimeError("setup_data must run before loading a checkpoint")
+        # Caller only invokes this when checkpoint_path is set; narrow for typing.
+        assert self.checkpoint_path is not None
+
+        try:
+            # weights_only=True (the torch>=2.6 default) blocks arbitrary-code
+            # unpickling. Real Lightning .ckpt files can carry non-tensor
+            # metadata (hyperparameters / callback state) that it rejects;
+            # operator-supplied benchmark paths are trusted, so fall back.
+            ckpt = torch.load(
+                self.checkpoint_path, map_location="cpu", weights_only=True
+            )
+        except Exception:
+            ckpt = torch.load(
+                self.checkpoint_path, map_location="cpu", weights_only=False
+            )
+        sd = ckpt["state_dict"] if isinstance(ckpt, dict) and "state_dict" in ckpt else ckpt
+        if not isinstance(sd, dict):
+            raise TypeError(
+                f"checkpoint at {self.checkpoint_path} is not a state_dict or "
+                f"Lightning checkpoint (got {type(sd).__name__})"
+            )
+
+        def _strip(prefix: str) -> dict[str, Any]:
+            return {k[len(prefix):]: v for k, v in sd.items() if k.startswith(prefix)}
+
+        if any(k.startswith("ema_model.") for k in sd):
+            field_sd = _strip("ema_model.")  # inference (EMA) weights
+        elif any(k.startswith("model.") for k in sd):
+            field_sd = _strip("model.")
+        else:
+            field_sd = dict(sd)  # already a bare velocity-field state_dict
+
+        result = recon.model.load_state_dict(field_sd, strict=False)
+        missing = list(getattr(result, "missing_keys", []))
+        unexpected = list(getattr(result, "unexpected_keys", []))
+        n_expected = len(recon.model.state_dict())
+        n_loaded = n_expected - len(missing)
+        # Require a COMPLETE load. A name-mismatched shape already raises inside
+        # load_state_dict; the remaining silent-degradation path is a checkpoint
+        # that matches only a SUBSET of parameters (e.g. truncated save, renamed
+        # submodule) — that would leave the rest randomly initialised and score a
+        # mostly-random field as if claim-bearing. Gate on missing keys, not just
+        # "loaded > 0".
+        if missing:
+            raise RuntimeError(
+                f"checkpoint at {self.checkpoint_path} is an incomplete match for "
+                f"the velocity field: loaded {n_loaded}/{n_expected} parameters "
+                f"({len(missing)} missing, {len(unexpected)} unexpected). Refusing "
+                f"to score a partially/randomly initialised model — check "
+                f"architecture / gene-panel / class-count match."
+            )
 
     def _reconstruct(
         self,
@@ -98,7 +177,11 @@ class AetherAdapter(VolumeBaseAdapter):
         recon = AetherReconstructor(cfg)
         recon.setup_data(ordered)
 
-        if self.max_epochs > 0:
+        if self.checkpoint_path is not None:
+            # Pre-trained path (#285/#288): load converged weights; never train
+            # inline. Takes precedence over max_epochs.
+            self._load_weights(recon)
+        elif self.max_epochs > 0:
             import pytorch_lightning as pl
 
             trainer = pl.Trainer(

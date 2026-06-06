@@ -173,16 +173,17 @@ def domain_ari_nmi(
     same spatial samples rather than arbitrary row order.
     """
     if X_truth.size == 0 or X_recon.size == 0:
-        return {"ari": float("nan"), "nmi": float("nan")}
+        return {"ari": float("nan"), "nmi": float("nan"), "ami": float("nan")}
 
     try:
         from sklearn.cluster import KMeans
         from sklearn.metrics import (
             adjusted_mutual_info_score,
             adjusted_rand_score,
+            normalized_mutual_info_score,
         )
     except ImportError:
-        return {"ari": float("nan"), "nmi": float("nan"), "status": "sklearn-missing"}
+        return {"ari": float("nan"), "nmi": float("nan"), "ami": float("nan"), "status": "sklearn-missing"}
 
     if coords_truth is not None and coords_recon is not None:
         try:
@@ -202,7 +203,7 @@ def domain_ari_nmi(
 
     n_pair = min(X_truth_cmp.shape[0], X_recon_cmp.shape[0])
     if n_pair < n_clusters * 2:
-        return {"ari": float("nan"), "nmi": float("nan"), "status": "too-few-cells"}
+        return {"ari": float("nan"), "nmi": float("nan"), "ami": float("nan"), "status": "too-few-cells"}
 
     k = min(n_clusters, n_pair)
     pooled = np.vstack([X_truth_cmp[:n_pair], X_recon_cmp[:n_pair]])
@@ -212,7 +213,8 @@ def domain_ari_nmi(
     recon_labels = labels[n_pair:]
     return {
         "ari": float(adjusted_rand_score(truth_labels, recon_labels)),
-        "nmi": float(adjusted_mutual_info_score(truth_labels, recon_labels)),
+        "nmi": float(normalized_mutual_info_score(truth_labels, recon_labels)),
+        "ami": float(adjusted_mutual_info_score(truth_labels, recon_labels)),
     }
 
 
@@ -547,6 +549,7 @@ def geometry_quartet(
             "morans_i_agreement": float("nan"),
             "domain_ari": float("nan"),
             "domain_nmi": float("nan"),
+            "domain_ami": float("nan"),
             "celltype_proportion_spearman": float("nan"),
         }
 
@@ -579,6 +582,7 @@ def geometry_quartet(
     )
     metrics["domain_ari"] = ari_nmi.get("ari", float("nan"))
     metrics["domain_nmi"] = ari_nmi.get("nmi", float("nan"))
+    metrics["domain_ami"] = ari_nmi.get("ami", float("nan"))
     if "status" in ari_nmi:
         metrics["domain_status"] = ari_nmi["status"]
 

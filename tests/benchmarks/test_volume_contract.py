@@ -321,3 +321,104 @@ def test_volume_adapter_input_accepts_valid_held_out_indices():
     # Should not raise
     inp = VolumeAdapterInput(slices=[s], held_out_indices=[0])
     assert inp.held_out_indices == [0]
+
+
+# -- z-window fix (auto-derived from inter-slice spacing) ------------------
+
+
+def test_z_window_derived_from_tight_spacing_collects_fewer_cells():
+    """With Bregma-like tight spacing (~0.04 mm), the auto-derived z-window
+    (0.5 * 0.04 = 0.02 mm) must collect far fewer virtual cells than the
+    old hardcoded ±0.5 window would have.
+    """
+    from aether_3d.benchmarks.contract import compute_volume_metrics
+
+    # Four slices at 0.00, 0.04, 0.08, 0.12 mm (Bregma-like spacing).
+    z_vals = [0.00, 0.04, 0.08, 0.12]
+    stack = _make_synthetic_stack(z_vals)
+    inp = VolumeAdapterInput(slices=stack, held_out_indices=[2])  # truth at 0.08 mm
+
+    # Virtual volume: 200 cells uniformly spread over z ∈ [0, 0.12] mm.
+    rng = np.random.default_rng(7)
+    n_cells = 200
+    v = ad.AnnData(X=rng.poisson(2.0, size=(n_cells, 12)).astype(np.float32))
+    v.var_names = [f"GENE_{i:03d}" for i in range(12)]
+    v.obsm["spatial"] = rng.uniform(0, 100, size=(n_cells, 2)).astype(np.float32)
+    v.obs["z"] = np.linspace(0.00, 0.12, n_cells).tolist()
+    v.obs["cell_type"] = ["A"] * n_cells
+
+    result = compute_volume_metrics(volume=v, inp=inp)
+    per = result["per_holdout_slice"]
+    assert len(per) == 1, "expected exactly one per-slice entry for held-out z=0.08"
+
+    n_virtual = per[0].get("n_virtual", 0)
+
+    # Old ±0.5 window would have collected ALL 200 cells (span is only 0.12 mm).
+    # New auto-derived window: 0.5 * 0.04 = 0.02 mm.
+    # Cells within ±0.02 of 0.08 cover 0.04/0.12 ≈ 1/3 of the range → ~67 cells.
+    assert n_virtual < n_cells, (
+        f"auto-derived z-window should exclude cells far from z=0.08; "
+        f"got {n_virtual}/{n_cells}"
+    )
+    # Must collect less than half — clearly narrower than the old ±0.5 blanket.
+    assert n_virtual < n_cells // 2, (
+        f"auto-derived window (±0.02 mm) should collect less than half of "
+        f"{n_cells} cells spread over 0.12 mm; got {n_virtual}"
+    )
+
+
+def test_z_window_explicit_override_is_respected():
+    """Explicit z_window= overrides the auto-derived value."""
+    from aether_3d.benchmarks.contract import compute_volume_metrics
+
+    # Stack uses n_genes=12 by default (_make_synthetic_slice default).
+    stack = _make_synthetic_stack([0.0, 1.0, 2.0])
+    inp = VolumeAdapterInput(slices=stack, held_out_indices=[1])
+    n_genes = 12  # must match the truth slices
+
+    # Build a volume with cells spread across z ∈ [0, 2] so the window matters.
+    rng = np.random.default_rng(3)
+    n = 60
+    v = ad.AnnData(X=rng.poisson(2.0, size=(n, n_genes)).astype(np.float32))
+    v.var_names = [f"GENE_{i:03d}" for i in range(n_genes)]
+    v.obsm["spatial"] = rng.uniform(0, 100, size=(n, 2)).astype(np.float32)
+    v.obs["z"] = np.linspace(0.0, 2.0, n).tolist()
+    v.obs["cell_type"] = ["A"] * n
+
+    # Wide explicit window: collects most/all cells near truth z=1.0.
+    res_wide = compute_volume_metrics(volume=v, inp=inp, z_window=10.0)
+    n_wide = res_wide["per_holdout_slice"][0]["n_virtual"]
+    assert n_wide == n, f"z_window=10.0 should collect all {n} cells; got {n_wide}"
+
+    # Narrow explicit window (0.1): collects only cells very close to z=1.0.
+    res_narrow = compute_volume_metrics(volume=v, inp=inp, z_window=0.1)
+    per_narrow = res_narrow["per_holdout_slice"]
+    assert len(per_narrow) == 1
+    n_narrow = per_narrow[0].get("n_virtual", 0)
+    assert n_narrow < n_wide, (
+        f"z_window=0.1 should collect fewer cells than z_window=10; "
+        f"got narrow={n_narrow}, wide={n_wide}"
+    )
+
+    # Vanishingly small window yields 0 virtual cells (strict < comparison).
+    res_zero = compute_volume_metrics(volume=v, inp=inp, z_window=1e-9)
+    per_zero = res_zero["per_holdout_slice"]
+    if per_zero:
+        n_zero = per_zero[0].get("n_virtual", 0)
+        assert n_zero == 0 or per_zero[0].get("error") == "no_virtual_cells_at_z"
+
+
+def test_compute_volume_metrics_reports_mean_domain_ami():
+    """mean_domain_ami must be present in the aggregate keys after fix #277."""
+    stack = _make_synthetic_stack([0.0, 1.0, 2.0])
+    inp = VolumeAdapterInput(slices=stack, held_out_indices=[1])
+    result = NearestSliceAdapter().run(inp)
+    assert result.status == "ok"
+    assert "mean_domain_ami" in result.metrics_json, (
+        f"mean_domain_ami missing; keys: {list(result.metrics_json)}"
+    )
+    per = result.metrics_json["per_holdout_slice"]
+    assert len(per) == 1
+    assert "domain_ami" in per[0], (
+        f"domain_ami missing from per-slice entry; keys: {list(per[0])}"
+    )

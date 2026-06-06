@@ -178,6 +178,115 @@ def load_real_merfish_slices(
     return slices, dataset_paths, int(n_dropped), int(len(shared)), z_is_physical
 
 
+def load_serial_h5ad(
+    h5ad_path: str,
+    *,
+    section_key: str = "section_id",
+    z_key: str = "z_coord",
+    label_key: str = "cell_class",
+    count_layer: str = "raw",
+    n_hvg: int = 2000,
+    max_cells: int | None = 4000,
+    section_window: tuple[int, int] | None = None,
+    seed: int = 42,
+    hvg_sample_cells: int = 20000,
+):
+    """Load a single multi-section processed ``.h5ad`` into an ordered slice list.
+
+    Mirrors :func:`load_real_merfish_slices` so the SECOND real serial-3D dataset
+    (openST/HNSCC, GSE251926) feeds the identical holdout machinery. Sections are
+    ordered by physical mean-z, optionally windowed to a contiguous block, then
+    seeded-subsampled per section (``max_cells``) to keep ``n0*n1 < 2**24`` for
+    ``torch.multinomial``. The model receives RAW INTEGER COUNTS: if ``count_layer``
+    is present (the openST h5ad stores log1p in ``X`` and counts in ``layers['raw']``)
+    those counts become ``X``; otherwise ``X`` is used as-is.
+
+    With high-plex panels (openST ≈ 29k genes) the velocity-field gene head and the
+    UOT hybrid cost are intractable, so ``n_hvg`` restricts every slice to the top-N
+    most variable genes (variance of ``log1p`` counts over a single global subsample
+    of up to ``hvg_sample_cells`` cells). The
+    SAME gene subset is used by every 2.5D baseline in the contrast, so the
+    continuous-vs-``linear-interp`` comparison stays apples-to-apples.
+
+    Returns ``(slices, dataset_paths, n_dropped, n_shared, section_ids, z_uniform)``
+    where ``z_uniform`` is True only if the section z-spacing is uniform (it is NOT
+    for openST: z = section ordinals, so cross-slice flow stays descriptive and the
+    voxel-cosine GT stays self-supervised — issue #291 remains open).
+    """
+    import scipy.sparse as _sp
+
+    rng = np.random.default_rng(seed)
+    backed = ad.read_h5ad(h5ad_path, backed="r")
+    obs = backed.obs
+    for key, name in ((section_key, "section_key"), (z_key, "z_key"), (label_key, "label_key")):
+        if key not in obs:
+            raise ValueError(
+                f"h5ad missing obs[{key!r}] ({name}); have {sorted(obs.columns)}"
+            )
+    if "spatial" not in backed.obsm:
+        raise ValueError(
+            f"h5ad missing obsm['spatial']; have {sorted(backed.obsm.keys())}"
+        )
+
+    sec_vals = obs[section_key].astype(str).to_numpy()
+    z_all = obs[z_key].astype(float).to_numpy()
+    sec_z = {s: float(np.mean(z_all[sec_vals == s])) for s in set(sec_vals)}
+    ordered = sorted(sec_z, key=lambda s: sec_z[s])
+    if section_window is not None:
+        ordered = ordered[section_window[0] : section_window[1]]
+    if len(ordered) < 3:
+        raise ValueError(
+            f"need >=3 sections for an interior holdout; got {len(ordered)} "
+            f"(window={section_window})"
+        )
+
+    use_layer = count_layer if (count_layer and count_layer in backed.layers) else None
+    n_genes_total = int(backed.n_vars)
+
+    # --- HVG pre-pass: pick the top-N genes from a single global subsample so
+    #     the full ~29k-gene width is densified at most ONCE (bounded by
+    #     hvg_sample_cells) instead of once per section. Column-subsetting then
+    #     happens while the per-section matrix is still sparse, so each retained
+    #     slice only ever materialises max_cells x n_hvg in dense form.
+    keep = None
+    if n_hvg and n_hvg < n_genes_total:
+        pool = np.nonzero(np.isin(sec_vals, np.asarray(ordered)))[0]
+        if len(pool) > hvg_sample_cells:
+            pool = np.sort(rng.choice(pool, hvg_sample_cells, replace=False))
+        samp = backed[pool].to_memory()
+        xs = samp.layers[use_layer] if use_layer else samp.X
+        xs = xs.toarray() if _sp.issparse(xs) else np.asarray(xs)
+        var = np.log1p(np.asarray(xs, dtype=np.float32)).var(axis=0)
+        keep = np.sort(np.argsort(var)[::-1][:n_hvg])
+        del samp, xs, var
+        n_dropped, n_shared = n_genes_total - int(n_hvg), int(n_hvg)
+    else:
+        n_dropped, n_shared = 0, n_genes_total
+
+    slices = []
+    for s in ordered:
+        idx = np.nonzero(sec_vals == s)[0]
+        if max_cells and len(idx) > max_cells:
+            idx = np.sort(rng.choice(idx, max_cells, replace=False))
+        sub = backed[idx].to_memory()
+        if keep is not None:
+            sub = sub[:, keep].copy()  # subset columns while still sparse
+        x_src = sub.layers[use_layer] if use_layer else sub.X
+        x_src = x_src.toarray() if _sp.issparse(x_src) else np.asarray(x_src)
+        a = ad.AnnData(X=np.asarray(x_src, dtype=np.float32), var=sub.var.copy())
+        a.obs[label_key] = pd.Categorical(sub.obs[label_key].astype(str).to_numpy())
+        if label_key != "cell_class":
+            a.obs["cell_class"] = a.obs[label_key]
+        a.obs["z_coord"] = sub.obs[z_key].astype(float).to_numpy()
+        a.obsm["spatial"] = np.asarray(sub.obsm["spatial"], dtype=np.float32)
+        slices.append(a)
+
+    zs = np.array([sec_z[s] for s in ordered], dtype=float)
+    gaps = np.diff(zs)
+    z_uniform = bool(gaps.size and np.allclose(gaps, gaps[0]))
+    return slices, [str(h5ad_path)], int(n_dropped), int(n_shared), ordered, z_uniform
+
+
 def reconstruct_holdout(neighbor_slices, held_slice, cfg, device, seed):
     """Train on ``neighbor_slices`` and reconstruct the virtual mid-slice.
 
@@ -453,25 +562,55 @@ def main(args: argparse.Namespace) -> None:
     args.max_cells = max_cells
     t_start = time.time()
 
-    # 1. Load the REAL 5-slice MERFISH dataset (NOT synthetic).
-    print("\n[INFO] Loading REAL MERFISH serial slices...")
-    slices, dataset_paths, n_dropped, n_shared, z_is_physical = load_real_merfish_slices(
-        args.data_dir,
-        n_slices=5,
-        max_cells=args.max_cells,
-        seed=seed,
-        fallback_spacing=args.fallback_spacing,
-    )
-    z_source = "PHYSICAL (real metadata)" if z_is_physical else (
-        f"SYNTHETIC (idx*{args.fallback_spacing} fallback)"
-    )
-    print(f"  z source: {z_source}; z_is_physical={z_is_physical}")
+    # 1. Load the REAL serial slices (MERFISH default; openST/HNSCC via --h5ad).
+    if args.h5ad:
+        window = None
+        if args.section_window:
+            lo, hi = (int(x) for x in args.section_window.split(":"))
+            window = (lo, hi)
+        print(f"\n[INFO] Loading REAL serial slices from {args.h5ad} ...")
+        slices, dataset_paths, n_dropped, n_shared, section_ids, z_uniform = (
+            load_serial_h5ad(
+                args.h5ad,
+                section_key=args.section_key,
+                z_key=args.z_key,
+                label_key=args.label_key,
+                count_layer=args.count_layer,
+                n_hvg=args.n_hvg,
+                max_cells=args.max_cells,
+                section_window=window,
+                seed=seed,
+            )
+        )
+        dataset_label = Path(args.h5ad).parent.name
+        # openST/HNSCC z_coord = section ORDINALS (non-uniform, NOT physical um):
+        # cross-slice flow stays descriptive, never physically grounded (#291).
+        z_is_physical = False
+    else:
+        print("\n[INFO] Loading REAL MERFISH serial slices...")
+        slices, dataset_paths, n_dropped, n_shared, z_is_physical = (
+            load_real_merfish_slices(
+                args.data_dir,
+                n_slices=5,
+                max_cells=args.max_cells,
+                seed=seed,
+                fallback_spacing=args.fallback_spacing,
+            )
+        )
+        section_ids = [str(i) for i in range(len(slices))]
+        z_uniform = True
+        z_source = "PHYSICAL (real metadata)" if z_is_physical else (
+            f"SYNTHETIC (idx*{args.fallback_spacing} fallback)"
+        )
+        print(f"  z source: {z_source}; z_is_physical={z_is_physical}")
+        dataset_label = "merfish_mouse_hypothalamus"
+    z_values = [float(s.obs["z_coord"].iloc[0]) for s in slices]
     for idx, s in enumerate(slices):
         print(
-            f"  slice {idx}: {s.shape[0]} cells x {s.shape[1]} genes "
-            f"| z={float(s.obs['z_coord'].iloc[0])}"
+            f"  slice {idx} (section {section_ids[idx]}): {s.shape[0]} cells "
+            f"x {s.shape[1]} genes | z={z_values[idx]}"
         )
-    print(f"  shared gene panel: {n_shared} genes ({n_dropped} dropped)")
+    print(f"  gene panel: {n_shared} genes ({n_dropped} dropped)")
 
     cfg = Aether3DConfig(
         seed=seed,
@@ -487,13 +626,23 @@ def main(args: argparse.Namespace) -> None:
     per_holdout = {}
     per_holdout_contrast = {}
     outputs_arrays = {}
-    held_list = (
-        list(INTERIOR_SLICES) if not args.single_holdout else [args.single_holdout]
-    )
+    interior = tuple(range(1, len(slices) - 1))
+    if args.single_holdout is not None:
+        if not (1 <= args.single_holdout <= len(slices) - 2):
+            raise SystemExit(
+                f"--single_holdout must be an interior index 1..{len(slices) - 2}"
+            )
+        held_list = [args.single_holdout]
+    else:
+        held_list = list(interior)
     for h in held_list:
         print(f"\n=== Holdout interior slice {h} (fit on neighbours h-1, h+1) ===")
         neighbor_slices = [slices[h - 1], slices[h + 1]]
         held_slice = slices[h]
+        # reconstruct_holdout derives the per-holdout thickness from the real
+        # z_coord gap of the bracketing neighbours (abs(z_hi - z_lo)), so the
+        # d=0.5 virtual plane lands on the held-out z even for non-uniform
+        # spacing (openST: irregular z ordinals; MERFISH: physical mm).
         virtual_slice, volume = reconstruct_holdout(
             neighbor_slices, held_slice, cfg, device, seed
         )
@@ -633,30 +782,53 @@ def main(args: argparse.Namespace) -> None:
         ]
 
     n_holdout = len(per_holdout)
-    z_desc = (
-        "physical (real Bregma/slice_id metadata)"
-        if z_is_physical
-        else f"SYNTHETIC fallback idx*{args.fallback_spacing} (no physical metadata found)"
-    )
-    # Flow-divergence / velocity-anisotropy are only "descriptive due to
-    # synthetic z" when z is NOT physical; with real spacing they are physically
-    # grounded (issue #222 acceptance criterion).
+    if args.h5ad:
+        data_desc = (
+            f"Real {len(slices)}-section {dataset_label} leave-one-out holdout "
+            f"over interior slices {sorted(per_holdout.keys())} "
+            f"({n_holdout} reconstruction passes)"
+        )
+        # openST/HNSCC: z_coord = section ORDINALS, NOT physical um (issue #291).
+        z_desc = (
+            f"top-{n_shared} HVG of {n_shared + n_dropped} ({n_dropped} dropped); "
+            f"z_coord = section ordinals "
+            f"({'uniform spacing' if z_uniform else 'NON-UNIFORM spacing, NOT physical um'}); "
+            f"raw integer counts from layers['{args.count_layer}'] (no normalization)"
+        )
+    else:
+        data_desc = (
+            f"Real 5-slice MERFISH leave-one-out holdout over interior slices "
+            f"{sorted(per_holdout.keys())} ({n_holdout} reconstruction passes)"
+        )
+        # MERFISH: z from real Bregma/slice_id mm metadata when present (#222),
+        # else synthetic idx*fallback_spacing ladder (z_is_physical=False).
+        merfish_z = (
+            "physical (real Bregma/slice_id metadata)"
+            if z_is_physical
+            else f"SYNTHETIC fallback idx*{args.fallback_spacing} (no physical metadata found)"
+        )
+        z_desc = (
+            f"shared gene panel {n_shared} genes ({n_dropped} dropped on "
+            f"intersection); z source: {merfish_z} (z_is_physical={z_is_physical}); "
+            f"MERFISH counts used as-is (no normalization)"
+        )
+    # Flow-divergence / velocity-anisotropy are PHYSICALLY GROUNDED only when z
+    # is physical (MERFISH with real Bregma/slice_id, issue #222). For the
+    # openST/HNSCC --h5ad path z_is_physical is always False (z = section
+    # ordinals), so the clause stays DESCRIPTIVE — never a physical claim.
     flow_clause = (
-        " DESCRIPTIVE (z synthetic = idx*fallback_spacing, no physical "
-        "cross-slice grounding): flow_*_divergence and velocity_anisotropy."
-        if not z_is_physical
-        else " flow_*_divergence and velocity_anisotropy are PHYSICALLY GROUNDED "
+        " flow_*_divergence and velocity_anisotropy are PHYSICALLY GROUNDED "
         "(z derived from real inter-slice spacing; z_is_physical=true)."
+        if z_is_physical
+        else " DESCRIPTIVE (z not physical: section ordinals / synthetic "
+        "fallback, no physical cross-slice grounding): flow_*_divergence and "
+        "velocity_anisotropy."
     )
     notes = (
-        f"Real 5-slice MERFISH leave-one-out holdout over interior slices "
-        f"{sorted(per_holdout.keys())} ({n_holdout} reconstruction passes); "
-        f"shared gene panel {n_shared} genes ({n_dropped} dropped on "
-        f"intersection); z source: {z_desc} (z_is_physical={z_is_physical}); "
+        f"{data_desc}; {z_desc}; "
         f"per-slice cell cap for reconstruction pairing: "
         f"{max_cells if max_cells else 'none'} "
-        f"(keeps n0*n1 < 2**24 for torch.multinomial); "
-        f"MERFISH counts used as-is (no normalization). "
+        f"(keeps n0*n1 < 2**24 for torch.multinomial). "
         f"Metrics are intrinsic self-supervised reconstruction "
         f"(predict a held-out real slice from its neighbours). "
         f"SELF-SUPERVISED (held-out real-slice truth): gene_profile_*, "
@@ -670,15 +842,18 @@ def main(args: argparse.Namespace) -> None:
         notes += " Single-holdout fallback; loo_gene_pearson_mean=null."
 
     # 4. Emit via the vendored uniform contract.
-    n_obs_primary = int(slices[INTERIOR_SLICES[1]].shape[0])  # central slice (2)
+    central = interior[len(interior) // 2]
+    n_obs_primary = int(slices[central].shape[0])  # central interior slice
     # Issue #222: z_is_physical gates every physical-spacing-dependent metric.
+    # openST/HNSCC z = section ordinals → z_is_physical=False → DESCRIPTIVE only.
     z_caveat = (
-        "flow-divergence (flow_*_divergence) and velocity_anisotropy are "
-        "DESCRIPTIVE only: z is synthetic (idx*fallback_spacing), so the velocity "
-        "field's cross-slice component is not physically grounded"
-        if not z_is_physical
-        else "z derived from real inter-slice spacing (z_is_physical=true): "
+        "z derived from real inter-slice spacing (z_is_physical=true): "
         "flow_*_divergence and velocity_anisotropy ARE physically grounded"
+        if z_is_physical
+        else "flow-divergence (flow_*_divergence) and velocity_anisotropy are "
+        "DESCRIPTIVE only: z is not physical (section ordinals / synthetic "
+        "fallback), so the velocity field's cross-slice component is not "
+        "physically grounded"
     )
     run_metadata = {
         "dataset_paths": dataset_paths,
@@ -754,6 +929,13 @@ def main(args: argparse.Namespace) -> None:
         "notes": notes,
     }
 
+    # Route non-MERFISH datasets to a per-dataset results root so the openST run
+    # never clobbers the MERFISH results/aether-3d/ (write_results keys by project,
+    # not by dataset_card_id).
+    results_root = args.results_root
+    if args.h5ad and results_root == str(project_root / "results"):
+        results_root = str(project_root / "results" / dataset_label)
+
     written = results_contract.write_results(
         project="aether-3d",
         dataset_card_id=results_contract.dataset_card_id(dataset_paths),
@@ -763,7 +945,7 @@ def main(args: argparse.Namespace) -> None:
             "holdout_pred.npz": "outputs/holdout_pred.npz",
         },
         run_metadata=run_metadata,
-        results_dir=args.results_root,
+        results_dir=results_root,
     )
 
     # 5. Write native output artifacts into outputs/.
@@ -794,12 +976,15 @@ def main(args: argparse.Namespace) -> None:
     print(f"  outputs/:          {outputs_dir}")
 
     # 6. Back-compat alias (a regression test pins this file's existence).
-    alias_path = project_root / "results" / "holdout_validation_metrics.json"
-    alias_path.parent.mkdir(parents=True, exist_ok=True)
-    metrics_payload = json.loads(written["metrics"].read_text())
-    with open(alias_path, "w") as f:
-        json.dump(metrics_payload, f, indent=4)
-    print(f"  back-compat alias: {alias_path}")
+    #    MERFISH-only: the alias names the canonical single-dataset holdout and is
+    #    pinned by test_issue_19; a non-MERFISH (--h5ad) run must not overwrite it.
+    if not args.h5ad:
+        alias_path = project_root / "results" / "holdout_validation_metrics.json"
+        alias_path.parent.mkdir(parents=True, exist_ok=True)
+        metrics_payload = json.loads(written["metrics"].read_text())
+        with open(alias_path, "w") as f:
+            json.dump(metrics_payload, f, indent=4)
+        print(f"  back-compat alias: {alias_path}")
 
 
 if __name__ == "__main__":
@@ -847,7 +1032,36 @@ if __name__ == "__main__":
         "--single_holdout",
         type=int,
         default=None,
-        choices=list(INTERIOR_SLICES),
-        help="Fallback: hold out only this interior slice (no LOO aggregate)",
+        help="Fallback: hold out only this interior slice index (no LOO aggregate)",
+    )
+    # --- Second real serial-3D dataset: a single multi-section processed .h5ad
+    #     (openST/HNSCC GSE251926). When --h5ad is given the MERFISH default path
+    #     is bypassed and results route to results/<dataset>/aether-3d/.
+    parser.add_argument(
+        "--h5ad",
+        default=None,
+        help="Single multi-section processed .h5ad (overrides the MERFISH path)",
+    )
+    parser.add_argument("--section-key", dest="section_key", default="section_id")
+    parser.add_argument("--z-key", dest="z_key", default="z_coord")
+    parser.add_argument("--label-key", dest="label_key", default="cell_class")
+    parser.add_argument(
+        "--count-layer",
+        dest="count_layer",
+        default="raw",
+        help="layers[...] holding raw integer counts; ignored if absent (uses X)",
+    )
+    parser.add_argument(
+        "--n-hvg",
+        dest="n_hvg",
+        type=int,
+        default=2000,
+        help="Restrict to top-N most-variable genes for tractable high-plex panels",
+    )
+    parser.add_argument(
+        "--section-window",
+        dest="section_window",
+        default=None,
+        help="lo:hi (z-ordered) contiguous section window, e.g. 0:7; default all",
     )
     main(parser.parse_args())
