@@ -47,6 +47,14 @@ class Aether3DConfig(BaseModel):
     lambda_g: float = 0.1   # gene reconstruction weight
     lambda_c: float = 10.0  # class prediction weight
 
+    # Feature normalization (issue: untrainable flow). Raw-µm spatial
+    # coordinates make the spatial MSE term ~1e5, which dwarfs every gradient
+    # and freezes training. When True the trajectory dataset standardizes the
+    # spatial coordinates and (log1p-)standardizes the gene counts it feeds the
+    # velocity field, and the reconstructor inverts the transform on its output
+    # so emitted volumes stay in the raw µm / count space the metrics expect.
+    normalize_features: bool = True
+
     ema_decay: float = 0.999
 
     # Training

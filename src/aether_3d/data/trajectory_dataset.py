@@ -19,6 +19,7 @@ from torch.utils.data import Dataset
 
 from ..coupling.uot import compute_hybrid_cost, compute_uot_coupling
 from ..config.aether_config import Aether3DConfig
+from .normalization import StateNormalizer
 
 
 class SerialSliceTrajectoryDataset(Dataset[Dict[str, torch.Tensor]]):
@@ -45,6 +46,19 @@ class SerialSliceTrajectoryDataset(Dataset[Dict[str, torch.Tensor]]):
         # and slice index — rather than an opaque KeyError surfaced lazily
         # inside __getitem__ during training (issue #86).
         self._validate_inputs()
+
+        # Feature normalization (deterministic in the data). Fit here so a
+        # training dataset and a reconstructor set up on the same slices derive
+        # identical statistics, keeping train-time inputs and inference-time ODE
+        # state in one normalized space. Statistics standardize the spatial
+        # coordinates and (log1p-)standardize the gene counts that feed the
+        # velocity field; UOT pairing below stays on the RAW values so the
+        # coupling is unchanged.
+        self.normalizer: StateNormalizer | None = (
+            StateNormalizer.fit(adata_list, spatial_key=config.spatial_key)
+            if config.normalize_features
+            else None
+        )
 
         # Global label encoder
         all_labels = []
@@ -135,6 +149,15 @@ class SerialSliceTrajectoryDataset(Dataset[Dict[str, torch.Tensor]]):
         g1 = ad1.X[t].toarray().squeeze() if hasattr(ad1.X, "toarray") else ad1.X[t]
         c1 = self._onehot(ad1.obs[self.cfg.label_key].iloc[[t]])[0]
         z1 = ad1.obs[self.cfg.z_key].iloc[t]
+
+        # Standardize the model's spatial + gene inputs (and thus the
+        # flow-matching velocity targets ux=x1-x0, ug=g1-g0) so no single term
+        # dominates the multi-task loss. z and one-hot class are already O(1).
+        if self.normalizer is not None:
+            x0 = self.normalizer.normalize_spatial(np.asarray(x0).reshape(1, -1))[0]
+            x1 = self.normalizer.normalize_spatial(np.asarray(x1).reshape(1, -1))[0]
+            g0 = self.normalizer.normalize_genes(np.asarray(g0).reshape(1, -1))[0]
+            g1 = self.normalizer.normalize_genes(np.asarray(g1).reshape(1, -1))[0]
 
         return {
             "x0": torch.tensor(x0, dtype=torch.float32),
