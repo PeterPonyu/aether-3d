@@ -159,6 +159,16 @@ class AetherReconstructor:
         all_cells = []
         z_offset = 0.0
 
+        # Feature normalizer fit at setup_data (deterministic in the slices, so
+        # it matches the one the training dataset used). The ODE integrates in
+        # this normalized space — the same space the velocity field was trained
+        # in — and outputs are inverted back to raw µm / counts below.
+        normalizer = (
+            getattr(self.dataset, "normalizer", None)
+            if self.dataset is not None
+            else None
+        )
+
         model = self.ema_model if hasattr(self, "ema_model") else self.model
         model.eval()
         try:
@@ -203,6 +213,26 @@ class AetherReconstructor:
                 np.asarray(ad1.obs[self.cfg.z_key].values, dtype=np.float32).reshape(-1, 1),
                 device=model_device,
             )
+
+            # Normalized ODE start states — the space the velocity field was
+            # trained in (issue: untrainable flow). The UOT cost below stays on
+            # the RAW tensors so the coupling is identical to before; only the
+            # values integrated through the model are standardized, and the
+            # integrated output is inverted back to raw µm / counts.
+            if normalizer is not None:
+                x0_src_all = torch.tensor(
+                    normalizer.normalize_spatial(np.asarray(ad0.obsm[self.cfg.spatial_key])),
+                    dtype=torch.float32,
+                    device=model_device,
+                )
+                g0_src_all = torch.tensor(
+                    normalizer.normalize_genes(np.asarray(ad0.X)),
+                    dtype=torch.float32,
+                    device=model_device,
+                )
+            else:
+                x0_src_all = x0_all
+                g0_src_all = g0_all
 
             # UOT-based cell pairing: hybrid cost (spatial + gene cosine + class)
             cost = compute_hybrid_cost(x0_all, g0_all, c0_all, x1_all, g1_all, c1_all)
@@ -292,8 +322,8 @@ class AetherReconstructor:
 
                 s0 = src_np[chosen]
                 t1 = tgt_np[chosen]
-                x_start = x0_all[s0]
-                g_start = g0_all[s0]
+                x_start = x0_src_all[s0]
+                g_start = g0_src_all[s0]
                 c_start = c0_all[s0]
                 z_start = z0_all[s0]
                 z_end = z1_all[t1]
@@ -316,26 +346,37 @@ class AetherReconstructor:
                 new_g = concat_end[:, spatial_dim : spatial_dim + gene_dim]
                 new_c = torch.softmax(concat_end[:, spatial_dim + gene_dim :], dim=-1)
 
+                # Invert normalization so the emitted volume is in the raw µm /
+                # count space the metrics and figures expect. The ODE integrated
+                # in normalized space (matching training); without this the
+                # output would be standardized, not real coordinates.
+                new_x_np = new_x.detach().cpu().numpy()
+                new_g_np = new_g.detach().cpu().numpy()
+                x_start_np = x_start.detach().cpu().numpy()
+                if normalizer is not None:
+                    new_x_np = normalizer.denormalize_spatial(new_x_np).astype(np.float32)
+                    new_g_np = normalizer.denormalize_genes(new_g_np).astype(np.float32)
+                    x_start_np = normalizer.denormalize_spatial(x_start_np).astype(np.float32)
+
                 # Net spatial flow each virtual cell underwent under the velocity
-                # field over the depth interval [0, d]: dx = x(d) - x(0). This is
-                # the per-cell velocity the reconstructor's ODE integrated, kept
-                # for downstream flow-divergence + anisotropy diagnostics.
-                spatial_velocity = (new_x - x_start).detach().cpu().numpy()
+                # field over the depth interval [0, d]: dx = x(d) - x(0), in raw
+                # µm. Kept for downstream flow-divergence + anisotropy diagnostics.
+                spatial_velocity = new_x_np - x_start_np
 
                 z_val = z_offset + d * thickness
                 z_arr = np.full((n_current, 1), z_val)
 
                 # Build mini AnnData for this virtual layer
                 layer_adata = ad.AnnData(
-                    X=new_g.detach().cpu().numpy(),
+                    X=new_g_np,
                     obs={
                         "source_slice": i,
                         "virtual_depth": d,
                         "z_3d": z_val,
                     },
                     obsm={
-                        "spatial_3d": np.hstack([new_x.detach().cpu().numpy(), z_arr]),
-                        "spatial": new_x.detach().cpu().numpy(),
+                        "spatial_3d": np.hstack([new_x_np, z_arr]),
+                        "spatial": new_x_np,
                     },
                 )
                 # Store predicted class probabilities
