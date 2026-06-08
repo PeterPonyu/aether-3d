@@ -28,6 +28,7 @@ Run (full real volume + evidence JSON):
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from pathlib import Path
 
 import anndata as ad
@@ -57,24 +58,33 @@ def _ordered_ordinals() -> np.ndarray:
         return np.array(CARD_SECTION_ORDINALS, dtype=float)
 
 
+def _openst_z_resolver(k: int) -> float:
+    """openST: interior holdout k (1-based) sits at the k-th ordered section
+    ordinal; endpoints are never held out."""
+    ordered_z = _ordered_ordinals()
+    return float(ordered_z[k]) if k < len(ordered_z) else float(k)
+
+
 def build_real_volume(
     npz_path: str | Path = NPZ,
     max_holdouts: int | None = None,
     cells_per_slice: int | None = None,
     seed: int = 0,
+    z_resolver: Callable[[int], float] | None = None,
 ) -> ad.AnnData:
     """Assemble a 3-D volume AnnData from the real LOO reconstruction.
 
-    Each held-out slice's predicted expression is placed at the slice's true
-    section-ordinal depth, yielding a genuine multi-z volume carrying the export
-    contract keys (``obsm['spatial_3d']`` (N,3), ``obs['z_3d']``).
+    Each held-out slice's predicted expression is placed at the slice's depth
+    (``z_resolver(holdout_id) -> float``; defaults to the openST section-ordinal
+    map), yielding a genuine multi-z volume carrying the export contract keys
+    (``obsm['spatial_3d']`` (N,3), ``obs['z_3d']``).
 
     ``max_holdouts`` / ``cells_per_slice`` subsample for a light-weight test;
     defaults (``None``) use the full real volume.
     """
     rng = np.random.default_rng(seed)
     data = np.load(Path(npz_path), allow_pickle=True)
-    ordered_z = _ordered_ordinals()
+    resolve_z = z_resolver or _openst_z_resolver
 
     hold_ids = sorted(
         int(k.split("_")[1]) for k in data.files if k.startswith("holdout_") and k.endswith("_pred")
@@ -89,9 +99,7 @@ def build_real_volume(
         if cells_per_slice is not None and pred.shape[0] > cells_per_slice:
             sel = rng.choice(pred.shape[0], size=cells_per_slice, replace=False)
             pred, xy = pred[sel], xy[sel]
-        # interior holdout k (1-based) sits at ordered_z[k]; endpoints never held out.
-        z = float(ordered_z[k]) if k < len(ordered_z) else float(k)
-        zcol = np.full((pred.shape[0], 1), z, dtype=np.float32)
+        zcol = np.full((pred.shape[0], 1), resolve_z(k), dtype=np.float32)
         X_parts.append(pred)
         xyz_parts.append(np.hstack([xy, zcol]).astype(np.float32))
 
@@ -109,7 +117,11 @@ def build_real_volume(
 
 
 def run_roundtrip(
-    volume: ad.AnnData, tmp_dir: str | Path
+    volume: ad.AnnData,
+    tmp_dir: str | Path,
+    dataset: str = "openst_hnscc_gse251926",
+    source: str = "real LOO reconstruction (reconstructed_volume.npz)",
+    z_kind: str = "section ordinal (non-uniform, NOT physical um; #291)",
 ) -> dict:
     """Round-trip ``volume`` through the export contract + Scanpy; return evidence."""
     import scanpy as sc
@@ -121,7 +133,7 @@ def run_roundtrip(
         write_volume,
     )
 
-    out = Path(tmp_dir) / "real_openst_volume.h5ad"
+    out = Path(tmp_dir) / f"real_{dataset}_volume.h5ad"
     assert_volume_schema(volume)
     written = write_volume(volume, out)
     back = read_volume(written)
@@ -146,12 +158,12 @@ def run_roundtrip(
     assert_volume_schema(back)  # 3-D schema still holds after Scanpy mutated it
 
     return {
-        "dataset": "openst_hnscc_gse251926",
-        "source": "real LOO reconstruction (reconstructed_volume.npz)",
+        "dataset": dataset,
+        "source": source,
         "n_cells": int(volume.n_obs),
         "n_genes": int(volume.n_vars),
         "n_holdout_sections": int(np.unique(volume.obs["holdout_section"]).size),
-        "z_kind": "section ordinal (non-uniform, NOT physical um; #291)",
+        "z_kind": z_kind,
         "z_min": float(np.min(volume.obs["z_3d"])),
         "z_max": float(np.max(volume.obs["z_3d"])),
         "roundtrip_lossless": bool(lossless),
@@ -162,20 +174,58 @@ def run_roundtrip(
     }
 
 
+# Two distinct REAL datasets (platform / tissue / gene-panel diversity) for the
+# row-3 interop gate. Each entry's z is labelled honestly; the export round-trip
+# is z-unit-agnostic (it tests serialization + Scanpy compat, not depth physics).
+DATASETS: dict[str, dict] = {
+    "openst_hnscc_gse251926": {
+        "npz": REPO / "results/openst_hnscc_gse251926/aether-3d/outputs/reconstructed_volume.npz",
+        "evidence": REPO / "results/openst_hnscc_gse251926/aether-3d/export_roundtrip_evidence.json",
+        "z_resolver": _openst_z_resolver,
+        "z_kind": "section ordinal (non-uniform, NOT physical um; #291)",
+        "source": "real openST/HNSCC GSE251926 LOO reconstruction (reconstructed_volume.npz)",
+    },
+    "merfish_mouse_hypothalamus": {
+        "npz": REPO / "results/aether-3d/outputs/reconstructed_volume.npz",
+        "evidence": REPO / "results/aether-3d/export_roundtrip_evidence.json",
+        # recon artifact predates #298; its z_coord = idx*10 synthetic ladder (NOT
+        # physical Bregma um) — matched here for an honest, depth-agnostic round-trip.
+        "z_resolver": lambda k: float(k) * 10.0,
+        "z_kind": "synthetic ladder z=idx*10 (pre-#298 recon artifact; NOT physical Bregma um)",
+        "source": "real MERFISH mouse-hypothalamus LOO reconstruction (reconstructed_volume.npz)",
+    },
+}
+
+
+def run_dataset(key: str, tmp_dir: str | Path) -> dict:
+    """Build + round-trip one registered dataset's real reconstruction volume."""
+    spec = DATASETS[key]
+    vol = build_real_volume(npz_path=spec["npz"], z_resolver=spec["z_resolver"])
+    return run_roundtrip(vol, tmp_dir, dataset=key, source=spec["source"], z_kind=spec["z_kind"])
+
+
 def main() -> None:
-    if not NPZ.exists():
-        raise SystemExit(f"missing real reconstruction artifact: {NPZ}")
     import tempfile
 
-    vol = build_real_volume()
-    with tempfile.TemporaryDirectory() as td:
-        evidence = run_roundtrip(vol, td)
-    EVIDENCE_JSON.parent.mkdir(parents=True, exist_ok=True)
-    EVIDENCE_JSON.write_text(json.dumps(evidence, indent=2))
-    print(json.dumps(evidence, indent=2))
-    print(f"\nwrote {EVIDENCE_JSON}")
-    if not (evidence["roundtrip_lossless"] and evidence["scanpy_pca_ok"]):
-        raise SystemExit("real-data export round-trip FAILED")
+    present = {k: s for k, s in DATASETS.items() if Path(s["npz"]).exists()}
+    if not present:
+        raise SystemExit("no real reconstruction artifacts found (results/* is gitignored)")
+
+    failed = []
+    for key, spec in present.items():
+        with tempfile.TemporaryDirectory() as td:
+            ev = run_dataset(key, td)
+        Path(spec["evidence"]).parent.mkdir(parents=True, exist_ok=True)
+        Path(spec["evidence"]).write_text(json.dumps(ev, indent=2))
+        print(json.dumps(ev, indent=2))
+        print(f"wrote {spec['evidence']}\n")
+        if not (ev["roundtrip_lossless"] and ev["scanpy_pca_ok"]):
+            failed.append(key)
+
+    print(f"=== {len(present)} real-data round-trip(s) over distinct datasets: "
+          f"{sorted(present)} ===")
+    if failed:
+        raise SystemExit(f"real-data export round-trip FAILED for: {failed}")
 
 
 if __name__ == "__main__":
