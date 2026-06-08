@@ -56,7 +56,10 @@ dependencies = [
 
 [project.optional-dependencies]
 # CI runs mypy 2.x; pin the major so local strict checks match CI exactly.
-dev = ["pytest", "ruff", "mypy>=2,<3", "wandb"]
+# ruff is pinned exactly (CI installs it via this extra, not a separate step): a
+# minor/patch bump can ship new lint rules that would red an unchanged main. Bump
+# deliberately, re-run `ruff check .`, then move the pin. Last green CI: 0.15.16.
+dev = ["pytest", "ruff==0.15.16", "mypy>=2,<3", "wandb"]
 viz = ["plotly", "pyvista", "ipywidgets", "napari[all]"]
 
 [project.scripts]
