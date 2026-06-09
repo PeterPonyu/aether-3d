@@ -24,7 +24,7 @@
 % Round 9 P5: ABSTRACT uppercase bold heading (matches reference bioRxiv style)
 \renewcommand{\abstractname}{\textbf{ABSTRACT}}
 
-\title{Aether3D: A Reproducible Benchmark Contract for Continuous 3D Spatial-Omics Reconstruction from Serial 2D Sections}
+\title{Aether3D: A Reproducible Benchmark Contract for a Planned Continuous 3D Spatial-Omics Reconstruction Claim}
 
 \author[1]{Anonymous Authors}
 \affil[1]{Author affiliations to be added before submission}
@@ -45,27 +45,26 @@
 \linenumbers
 \statusbanner
 
+
 \begin{abstract}
 Serial-section tissue imaging produces discrete 2D slices whose
-inter-section geometry must be reconstructed to enable continuous
-volumetric analysis. We introduce \textbf{\textsc{Aether3D}}, a
-benchmark contract that wraps six 3D-reconstruction adapters under a
-single virtual-slice holdout protocol: two always-available baselines
-(nearest-slice and linear-interpolation) and four external competitors
-that are wired through a shared input/output schema and run only when
-their upstream packages are installed. Per virtual depth we report an
-eight-metric suite: Chamfer distance, coordinate RMSE, sliced 2D
-Wasserstein, Moran's I agreement, domain ARI, domain NMI, cell-type
-proportion Spearman, and Betti-0 topology stability. Flow-divergence and
-velocity-anisotropy vector-field diagnostics ship in the same module but
-are computed only when a velocity field is available, not for the NumPy
-baselines reported here. An $(\alpha_{\text{spatial}}
-\times \lambda_{\text{class}})$ ablation grid quantifies the contribution of each
-component of the hybrid coupling cost, and a scaling
-harness records per-measurement device, CUDA version, runtime, and peak
-GPU memory. \emph{All results in this draft are computed from synthetic
-placeholder data; real-data promotion is gated by the project claim
-ledger.}
+inter-section geometry is often hypothesized to benefit from continuous
+3D reconstruction. This draft now treats that positive reconstruction
+claim as \emph{planned (contradicted)} rather than established: the
+project claim ledger records that current real leave-one-out benchmarks
+on two serial datasets favor simple 2.5D / linear-interpolation baselines
+over the continuous adapter on the primary Moran's-I, Betti-0, and
+sliced-Wasserstein metrics. We therefore present \textbf{\textsc{Aether3D}}
+as a reproducible benchmark contract and repair target, not as a validated
+advantage result. The contract wraps reconstruction adapters under a
+single virtual-slice holdout protocol and reports Chamfer distance,
+coordinate RMSE, sliced 2D Wasserstein, Moran's I agreement, domain ARI,
+domain NMI, cell-type proportion Spearman, and Betti-0 topology stability.
+Flow-divergence and velocity-anisotropy diagnostics are computed only
+when a velocity field is available. All positive biological,
+cell-fidelity, and continuous-over-2.5D performance claims remain gated by
+the claim ledger and cannot graduate until repaired benchmarks reverse the
+current contradictory evidence.
 \end{abstract}
 
 \section{Introduction}
@@ -643,7 +642,7 @@ through the contract will produce nonzero memory under the
 \label{sec:discussion}
 
 \textsc{Aether3D} in its present synthetic-evaluation form is not a claim of
-biological superiority over any prior 3D reconstruction method. The
+biological advantage over any prior 3D reconstruction method. The
 audit boundary requires that every promotion of a claim from
 \texttt{validated-small} or \texttt{blocked} to \texttt{paper-ready} be
 backed by real-data evidence linked from the project claim ledger.

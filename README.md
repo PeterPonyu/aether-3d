@@ -1,8 +1,8 @@
 # Aether3D
 
-**Learning Continuous 3D Tissue Vector Fields from Serial Spatial Omics Slices**
+**Planned continuous 3D tissue reconstruction; current benchmark evidence is `planned (contradicted)` for the continuous-over-2.5D advantage claim.**
 
-Aether3D is a local research package for continuous 3D spatial-omics reconstruction experiments from discrete serial 2D physical slices. It targets joint velocity-field modeling over space, gene expression, and cell identity via optimal transport coupling + flow matching. Current evidence supports synthetic/local-small smoke validation; cell-level fidelity, broad baseline superiority, full interoperability, and large-atlas scalability remain gated by [`CLAIM_LEDGER.md`](./CLAIM_LEDGER.md).
+Aether3D is a local research package for continuous 3D spatial-omics reconstruction experiments from discrete serial 2D physical slices. It targets joint velocity-field modeling over space, gene expression, and cell identity via optimal transport coupling + flow matching. Current evidence supports synthetic/local-small smoke validation and real-data interoperability checks, but the headline continuous-3D reconstruction advantage claim is `planned (contradicted)`: on the repo's own real leave-one-out benchmarks, the continuous adapter loses to simple 2.5D/linear-interpolation baselines on the primary geometry/topology metrics. Cell-level fidelity, broad baseline advantage, and large-atlas scalability remain gated by [`CLAIM_LEDGER.md`](./CLAIM_LEDGER.md).
 
 Given a schema-valid stack of aligned 2D spatial transcriptomics / proteomics slices with physical Z coordinates, the target API produces a 3D AnnData-style volume for benchmarked virtual slicing and downstream evaluation. Downstream biological use requires the claim-ledger evidence gates to pass.
 
@@ -60,7 +60,7 @@ volume = model.reconstruct_continuous_volume(adatas, thickness=10.0, n_samples=2
 - Target AnnData / Scanpy / SpatialData interoperability, gated by export-contract tests.
 - Target large-atlas scalability via chunking, gated by scaling-table and memory evidence before any >30M-cell-style claim.
 
-This architecture defines the local Aether3D implementation surface. Publication claims are controlled by the claim ledger and must be validated with local 3D reconstruction benchmarks before manuscript use.
+This architecture defines the local Aether3D implementation surface. Publication claims are controlled by the claim ledger; the current reconstruction-advantage headline must stay `planned (contradicted)` until repaired benchmarks beat the 2.5D baselines.
 
 ## Prior Art and Audit Boundary
 
