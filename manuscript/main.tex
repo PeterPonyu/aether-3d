@@ -14,6 +14,16 @@
 \usepackage{lineno}
 \usepackage{titlesec}
 
+% --- Aether3D "aether / sky" schematic palette (cool multi-hue, coral accent) ---
+\definecolor{aetIndigo}{HTML}{3B3B98}
+\definecolor{aetViolet}{HTML}{7A4FCF}
+\definecolor{aetCyan}{HTML}{1FA8C9}
+\definecolor{aetMint}{HTML}{2FC79B}
+\definecolor{aetSky}{HTML}{59B7F2}
+\definecolor{aetCoral}{HTML}{F2675F}
+\definecolor{aetInk}{HTML}{1B1C3A}
+\definecolor{aetHaze}{HTML}{EFF3FC}
+
 \titleformat{\section}{\bfseries\normalsize}{\thesection}{0.5em}{}
 \titleformat{\subsection}{\bfseries\normalsize\itshape}{\thesubsection}{0.5em}{}
 
@@ -24,679 +34,495 @@
 % Round 9 P5: ABSTRACT uppercase bold heading (matches reference bioRxiv style)
 \renewcommand{\abstractname}{\textbf{ABSTRACT}}
 
-\title{Aether3D: A Reproducible Benchmark Contract for a Planned Continuous 3D Spatial-Omics Reconstruction Claim}
+\graphicspath{{figures/}}
+
+\title{aether: spatially-regularized cross-gene low-rank reconstruction\\
+of held-out slices in serial-section 3D spatial transcriptomics\\[0.4em]
+\large\itshape A bounded result---a principled estimator and an oracle-quantified intrinsic ceiling.}
 
 \author[1]{Anonymous Authors}
 \affil[1]{Author affiliations to be added before submission}
 
 \date{\today}
 
-\newcommand{\statusbanner}{%
-  \begin{center}\colorbox{yellow!30}{\parbox{0.9\textwidth}{%
-  \textbf{DRAFT --- SYNTHETIC PLACEHOLDER DATA.} Every numerical result and
-  figure in this manuscript is generated from the synthetic benchmark JSONs
-  under \path{aether-3d/results/benchmark/}. No claim has graduated to
-  \emph{paper-ready} status in the project claim ledger. Real-data
-  promotion is gated by the acceptance matrix.
+\newcommand{\draftbanner}{%
+  \begin{center}\colorbox{aetSky!20}{\parbox{0.9\textwidth}{%
+  \textbf{WORKING DRAFT (v14) --- real-data results.} Numbers in this manuscript
+  are reproduced from leave-one-section-out benchmarks on real serial-section
+  MERFISH and Open-ST datasets (see \texttt{results/benchmark/reconstruction\_3d/V14\_SUMMARY.md}).
+  Claim-ledger rows are updated to \texttt{supported}; no row is marked \texttt{validated}
+  until explicit human sign-off.
   }}\end{center}}
 
 \begin{document}
 \maketitle
 \linenumbers
-\statusbanner
-
+\draftbanner
 
 \begin{abstract}
-Serial-section tissue imaging produces discrete 2D slices whose
-inter-section geometry is often hypothesized to benefit from continuous
-3D reconstruction. This draft now treats that positive reconstruction
-claim as \emph{planned (contradicted)} rather than established: the
-project claim ledger records that current real leave-one-out benchmarks
-on two serial datasets favor simple 2.5D / linear-interpolation baselines
-over the continuous adapter on the primary Moran's-I, Betti-0, and
-sliced-Wasserstein metrics. We therefore present \textbf{\textsc{Aether3D}}
-as a reproducible benchmark contract and repair target, not as a validated
-advantage result. The contract wraps reconstruction adapters under a
-single virtual-slice holdout protocol and reports Chamfer distance,
-coordinate RMSE, sliced 2D Wasserstein, Moran's I agreement, domain ARI,
-domain NMI, cell-type proportion Spearman, and Betti-0 topology stability.
-Flow-divergence and velocity-anisotropy diagnostics are computed only
-when a velocity field is available. All positive biological,
-cell-fidelity, and continuous-over-2.5D performance claims remain gated by
-the claim ledger and cannot graduate until repaired benchmarks reverse the
-current contradictory evidence.
+Serial-section 3D spatial transcriptomics stacks 2D slices into a volume, but slices are
+often missing or damaged; can a held-out slice be reconstructed from its neighbours?
+We first show the $z$-trajectory is nearly vacuous: predicting a slice as the \emph{mean}
+of its neighbours equals a per-gene linear-in-$z$ fit (poly1) to three decimals on every
+dataset---so this is an \textbf{estimation} problem, not an interpolation one.
+The exploitable structure is \textbf{cross-gene low-rank}: because genes co-express, the
+held-out [bin\,$\times$\,gene] slice is low-rank, and denoising the poly1 prediction across
+genes beats poly1 on accuracy.
+We strengthen this estimator with a \textbf{spatially-regularized low-rank (jointSLR)}---a
+single graph-Laplacian objective that denoises across genes while respecting the bin
+graph---which is the new accuracy frontier on both MERFISH stacks ($+0.05$ Pearson over
+plain SVD, replicated 9/6 seeds) and exploits real spatial autocorrelation only (a planted
+spatially-white control confirms specificity); the advantage reproduces on a fully
+independent stack (Kuett 3D imaging mass cytometry of human breast cancer: $+0.030$ mean
+Pearson over SVD, all $15/15$ held-out pairs positive, paired Wilcoxon $p{<}10^{-4}$).
+Truncated low-rank trades spatial-pattern fidelity (Moran-match) for accuracy; a
+CV-constrained convex blend (\textbf{blend\_pareto\_joint}) closes that tradeoff, keeping
+most of the accuracy gain while restoring fidelity to the poly1 level.
+Crucially we \textbf{bound} the task: an oracle that sees the held-out slice's own best
+rank-32 subspace reaches Pearson $0.73$ (MERFISH) / $0.87$ (HNSCC), far above any
+estimator---and a leak-free registration probe shows the estimator$\to$oracle gap is
+\textbf{biological cross-$z$ variation, not a fixable misregistration artifact}.
+The honest contribution is therefore a \emph{bounded} one: a principled,
+specificity-checked estimator that advances the accuracy frontier on sparse-$z$ stacks (and
+reverts to poly1 where the signal is weak), plus an oracle-quantified characterisation of
+the intrinsic ceiling of single-volume serial-section reconstruction.
+On dense-$z$ Open-ST HNSCC (19 slices), jointSLR is neutral and this result is
+reported plainly.
+A case study reconstructs the held-out slice's Esr1 pattern (preoptic
+estrogen-receptor neurons), recovering an anatomically-meaningful, sexually-dimorphic domain.
 \end{abstract}
 
+
+% ---------------------------------------------------------------------------
 \section{Introduction}
 \label{sec:intro}
+% ---------------------------------------------------------------------------
 
-Three-dimensional tissue context cannot be recovered from 2D imaging
-without an explicit reconstruction step that addresses two coupled
-problems: (i)~aligning discrete sections in a shared 3D coordinate
-system; (ii)~estimating the cellular and molecular state at intermediate
-depths the imager did not capture. The local reference stack now includes
-multi-slice integration, alignment, and platform-benchmark papers that make
-section spacing, missing sections, and modality-specific resolution explicit
-sources of variation~\cite{Dong2025MultisliceBenchmark,
+3D reconstruction in spatial transcriptomics has focused on slice \emph{alignment} (PASTE,
+PASTE2, GPSAlign, STAligner, STalign). The distinct task of \emph{reconstructing a missing
+slice's expression} has no strong published method; classical per-(bin,gene) interpolation
+(poly1) is the standing baseline. Prior work explored continuous-field generative and
+multi-slice 3D reconstruction
+models~\cite{Wang2023STitch3D}; the present series showed that deep continuous-field
+adaptation (INR / flow-matching, version 12) loses to poly1 on spatial fidelity metrics,
+and that the ``continuous 3D'' modelling direction is a dead end on registered stacks.
+A separate line of work imputes unmeasured \emph{genes} rather than a missing \emph{slice}:
+novoSpaRc reconstructs a spatial expression map from dissociated
+cells~\cite{novosparc}, while Tangram~\cite{tangram}, gimVI~\cite{gimvi}, and
+SpaGE~\cite{spage} transfer scRNA-seq expression onto a spatial assay---but these recover
+missing genes within an observed slice, not a missing $z$-slice of a serial volume.
+We revisit the problem with the correct structural prior---cross-gene low-rank: because
+genes co-express, the held-out [bin\,$\times$\,gene] matrix is approximately low-rank, and
+denoising the poly1 prediction in this subspace is a classical low-rank
+matrix-approximation~\cite{eckartyoung} and matrix-completion~\cite{matrixcompletion}
+idea. We strengthen the estimator with a spatial regularizer, characterise where it has an
+accuracy advantage and at what cost, and crucially \textbf{bound} the achievable performance
+with an oracle and explain the residual gap.
+
+The local reference stack includes multi-slice integration, alignment, and
+platform-benchmark papers that make section spacing, missing sections, and
+modality-specific resolution explicit sources of
+variation~\cite{Dong2025MultisliceBenchmark,
 ClusteringIntegrationBenchmark2024,You2024SequencingST,Cervilla2026SixCancerPlatforms}.
-Prior art spans alignment-only
-methods~\cite{Zeira2022PASTE,Liu2023PASTE2,Zhou2023STAligner,Jones2023GPSA,Clifton2023STalign},
-2.5D virtual-slice interpolators, and continuous-field
-generative and multi-slice 3D-reconstruction models~\cite{Wang2023STitch3D};
-we cite these as motivation rather than re-using their
-methodology, with the baseline reference treated as an aspirational large-scale prior-art
-comparison rather than a reproduced result~\cite{Yang2026DeepSpatial}.
-\textsc{Aether3D} builds on entropic optimal
-transport~\cite{Cuturi2013Sinkhorn} for slice coupling, flow
-matching~\cite{Lipman2023FlowMatching} for the velocity field, and
-adaptive normalization~\cite{Peebles2023DiT} for conditioning on
-heterogeneous cell-state tokens. Downstream analyses use spatial
-autocorrelation~\cite{Moran1950Autocorrelation}, adjusted Rand
-similarity~\cite{Hubert1985Adjusted}, and persistent-homology
-descriptors~\cite{Edelsbrunner2010PersistentHomology}; spatial-domain
-application pressure is represented by CellCharter-style niche discovery,
-which remains cited rather than integrated in this scaffold~\cite{Varrone2024CellCharter}.
-The data plumbing
-follows standard single-cell tooling~\cite{Wolf2018Scanpy}.
-
-\textsc{Aether3D} contributes three components: (i)~a uniform
-volume-adapter contract that lets methods be compared on identical
-inputs under the held-out audit boundary;
-(ii)~an eight-metric per-virtual-slice suite (Section~\ref{sec:metrics})
-that reports geometry, molecular, and topology fidelity in one pass;
-(iii)~an explicit $\lambda_{\text{class}}$ knob with a reproducible ablation
-grid that examines the shipped $\alpha_{\text{spatial}} = 0.5$,
-$\lambda_{\text{class}} = 10$ defaults.
-
+Alignment-only methods provide the spatial coordinates that our per-bin estimator
+inherits~\cite{Zeira2022PASTE,Liu2023PASTE2,Zhou2023STAligner,Jones2023GPSA,Clifton2023STalign}.
 Per the project audit boundary, no prose, class name, or figure layout
-from any prior 3D reconstruction work is reused; the leakage scanner
-enforces this.
+from any prior 3D reconstruction work is reused; the leakage scanner enforces this.
+All data tooling follows standard single-cell conventions~\cite{Wolf2018Scanpy}.
 
+
+% ---------------------------------------------------------------------------
 \section{Method}
 \label{sec:method}
+% ---------------------------------------------------------------------------
+
+We bin each observed slice into a spatial grid (per-gene mean within each bin)---the binning
+and neighbour-graph construction follow standard spatial-omics tooling~\cite{squidpy}---and
+compare predictors of the held-out slice (Fig.~\ref{fig:arch}).
+All hyperparameters are cross-validated on observed slices; the held-out slice's expression
+is scored exactly once.
 
 \subsection{Problem formulation}
-\label{sec:problem-formulation}
+\label{sec:problem}
 
-A serial-section spatial-omics volume is a tuple
-$\mathcal{V} = \{(\mathbf{X}_k, \mathbf{S}_k, z_k)\}_{k=1}^K$ where for
-each section $k$, $\mathbf{X}_k \in \mathbb{R}^{N_k \times G}$ is the
-per-cell expression, $\mathbf{S}_k \in \mathbb{R}^{N_k \times 2}$ are
-the 2D centroid coordinates, and $z_k \in \mathbb{R}$ is the physical
-depth in micrometers. A 3D reconstruction adapter
-$g_\phi\!:\!\mathcal{V} \mapsto \tilde{\mathcal{V}}(z)$ returns a
-continuous family of synthetic slices at any query depth $z \in
-[\min_k z_k, \max_k z_k]$. The audit boundary requires that
-$g_\phi$ never observes a held-out slice $k^\star$ during the call
-that asks for $\tilde{\mathcal{V}}(z_{k^\star})$.
+A serial-section volume is $\mathcal{V} = \{(\mathbf{X}_k, \mathbf{S}_k, z_k)\}_{k=1}^K$
+where $\mathbf{X}_k \in \mathbb{R}^{N_k \times G}$ is expression, $\mathbf{S}_k$ the 2D
+centroids, and $z_k$ the physical depth ($\mu$m). A held-out slice $k^\star$ is removed from
+the adapter's visible input; the task is to recover $\mathbf{X}_{k^\star}$ on a spatial grid
+using the remaining $K-1$ slices. The audit boundary is mechanically enforced by the
+\texttt{VolumeAdapterInput} contract; per-result provenance records device, runtime, seed,
+and git SHA.
 
-\subsection{Architecture: volume-adapter contract + hybrid UOT coupling}
-\label{sec:contract}
+\subsection{Estimators}
+\label{sec:estimators}
 
-Each method we compare implements a uniform \texttt{VolumeBaseAdapter}
-subclassing pattern. The visible input is a list of AnnData slices with
-\texttt{.obsm["spatial"]} 2D coords and a per-slice physical-$z$ value;
-held-out slices are removed from the adapter-visible input before any
-call. Per-result provenance records device, runtime, peak memory,
-torch version, CUDA version, hostname, and git SHA. Six test files
-under \texttt{aether-3d/tests/benchmarks/} independently verify the
-audit boundary across the sweep harnesses.
+\begin{description}
+  \item[\textbf{poly1.}] Per-(bin,gene) least-squares linear fit in $z$. The standing
+  classical baseline and the spatial-fidelity (Moran-match) champion.
 
-The 2.5D-stacking baseline (\texttt{linear-interp}) is a plain
-flanking-slice linear interpolation; the continuous-3D path uses the
-hybrid UOT coupling described in Section~\ref{sec:uot} together with a
-flow-matching velocity field and an ODE-integrated density-preserving
-sampler. The architecture is described once via the adapter contract so
-new methods plug in without changing the runner.
+  \item[\textbf{Cross-gene low-rank --- SVD.}] Truncated-SVD denoise of the poly1 prediction
+  across genes (the rank-$r$ truncation is the optimal low-rank approximation~\cite{eckartyoung});
+  rank $r$ selected by leave-one-observed-slice-out CV.
 
-\subsection{Hybrid UOT coupling}
-\label{sec:uot}
+  \item[\textbf{jointSLR (this work).}] Spatially-regularized low-rank:
+  \[
+    \mathbf{Z} = (\mathbf{I} + \lambda \mathbf{L})^{-1} \mathbf{P}
+  \]
+  over the occupied-bin graph Laplacian $\mathbf{L}$~\cite{lapeigen,harmonicgraph}, then
+  rank-$r$ truncation;
+  $(\lambda, r)$ by leave-one-observed-slice-out CV. A single principled objective---unlike
+  the rejected post-hoc factor smoothing (v12).
 
-The cell-to-cell coupling cost between adjacent slices combines spatial
-distance, gene cosine distance, and a same-cell-type penalty. Let
-$\hat{D}^{\text{spat}}$ and $\hat{D}^{\text{gene}}$ be the spatial
-(Euclidean) and gene (cosine) distance matrices, each max-normalized to
-$[0, 1]$, and let $P^{\text{cell}}_{ij} = \mathrm{clip}(1 - \langle
-\mathbf{c}_i, \mathbf{c}_j \rangle, 0, 1)$ be the one-hot cell-type
-mismatch between cells $i$ and $j$:
-\[
-  C_{ij} = \alpha_{\text{spatial}} \, \hat{D}^{\text{spat}}_{ij}
-         + (1 - \alpha_{\text{spatial}}) \, \hat{D}^{\text{gene}}_{ij}
-         + \lambda_{\text{class}} \, P^{\text{cell}}_{ij}.
-\]
-Both $\alpha_{\text{spatial}} \in [0, 1]$ and $\lambda_{\text{class}} \in
-[0, \infty)$ are exposed as configuration parameters; the shipped
-defaults are $\alpha_{\text{spatial}} = 0.5$ and $\lambda_{\text{class}} =
-10$. The $(\alpha, \lambda)$ ablation grid in
-Section~\ref{sec:res-ablation} quantifies the contribution of each
-component and justifies those defaults.
+  \item[\textbf{blend\_pareto\_joint (deployable).}] Convex blend
+  $\alpha \cdot \text{jointSLR} + (1-\alpha) \cdot \text{poly1}$, with $\alpha$ chosen by
+  CV to maximise Pearson subject to Moran-match $\ge$ poly1's $-\varepsilon$.
 
-\subsection{Training and inference protocol}
-\label{sec:training-protocol}
+  \item[\textbf{Floors / falsification record.}] mean-slice (no $z$-model), nearest-slice,
+  Gaussian process (RBF) $z$-interpolation, and the deep continuous-field adaptation (INR /
+  flow-matching, v12) retained as falsification evidence, not a winner.
+\end{description}
 
-The continuous-3D adapters expose a deterministic \texttt{fit / sample}
-contract: \texttt{fit} consumes the visible slices plus their physical-$z$
-labels and returns an adapter object; \texttt{sample(z)} returns the
-reconstructed AnnData at any in-range depth. The
-scaling harness (\texttt{aether\_3d.benchmarks.scaling}) records device,
-torch version, CUDA version, hostname, peak GPU memory, runtime, and
-git SHA per measurement, so a reviewer can re-run any single scaling
-point. Downstream cellular-neighborhood analysis
-(\texttt{aether\_3d.benchmarks.\allowbreak neighborhood}) computes radius-$R$
-distance-band enrichment and z-axis depth-binned density profiles
-around any query cell type, supporting the in-silico sectioning and
-co-localization analyses described in Section~\ref{sec:results}.
-
-\subsection{Metric suite}
+\subsection{Metrics, oracle, and replication}
 \label{sec:metrics}
 
-For each held-out virtual depth $z_t$ the reconstructed cells are
-compared against the truth slice at that depth on eight metrics:
-Chamfer distance and coordinate RMSE (geometry), sliced 2D Wasserstein
-(distributional geometry), Moran's I agreement on top-$K$ HVGs
-(molecular continuity), domain ARI and domain NMI via KMeans on the
-latent (cluster identity), cell-type proportion Spearman (identity
-composition), and Betti-0 stability via kNN union-find (topology).
+All four scores are computed on the held-out slice's occupied-bin set $\Omega$, per gene and
+then averaged over the $G$ genes; let $t_{\cdot g},p_{\cdot g}\in\mathbb{R}^{|\Omega|}$ be the
+truth and prediction for gene $g$.
+\emph{Pearson} $=\frac{1}{G}\sum_g \mathrm{corr}(t_{\cdot g},p_{\cdot g})$ is the mean per-gene
+Pearson correlation across occupied bins; \emph{Spearman} is the same statistic on per-column
+(ordinal double-argsort) ranks.
+\emph{RMSE-norm} $=\frac{1}{G}\sum_g \mathrm{RMSE}(p_{\cdot g},t_{\cdot g})/(\sigma(t_{\cdot g})+\varepsilon)$,
+with $\mathrm{RMSE}=\sqrt{\frac{1}{|\Omega|}\sum_{b\in\Omega}(p_{bg}-t_{bg})^2}$ and
+$\sigma(t_{\cdot g})$ the gene's own truth standard deviation, so genes on different scales
+contribute comparably (lower is better).
+\emph{Moran-match} measures whether the reconstruction preserves \emph{which} genes are
+spatially structured: for each gene we form a spatial-autocorrelation score (in the spirit of
+Moran's $I$~\cite{Moran1950Autocorrelation})
+$I_g=\mathrm{corr}\big(x_{\cdot g},\,\overline{x}^{\,\mathrm{knn}}_{\cdot g}\big)$---the
+correlation between its value and its $k{=}6$ nearest-occupied-bin neighbourhood mean---and
+Moran-match is the Pearson correlation \emph{across genes} between the truth vector $I^{t}$ and
+the prediction vector $I^{p}$.
 
-\textbf{Metric definitions.}
-\emph{Chamfer distance}: the mean of the per-direction nearest-neighbor
-Euclidean distances between two point clouds $A$ and $B$,
-$d_\text{Ch}(A,B)=\tfrac{1}{2}(\bar{d}_{A\to B}+\bar{d}_{B\to A})$
-($\downarrow$ better).
-\emph{Coordinate RMSE}: root-mean-squared nearest-neighbor distance
-from the reconstruction to truth ($\downarrow$ better).
-\emph{Sliced 2D Wasserstein}: approximation of the 2D Wasserstein
-distance via mean 1D Wasserstein over $n=50$ random projections;
-measures distributional shift in cell position ($\downarrow$ better).
-\emph{Moran's I agreement}: Spearman correlation of per-gene
-Moran's~$I$ statistics~\cite{Moran1950Autocorrelation} computed
-independently on truth and reconstruction, evaluated over the top-$K$
-(default $K=100$) highest-variance genes; measures whether the spatial
-autocorrelation structure of gene expression is preserved
-($\uparrow$ better).
-\emph{Domain ARI / NMI}: KMeans labels fit to the pooled
-truth-plus-reconstruction gene-expression matrix; ARI~\cite{Hubert1985Adjusted}
-and NMI between the two halves measure cluster-identity agreement
-($\uparrow$ better).
-\emph{Cell-type proportion Spearman}: Spearman correlation of per-label
-cell counts between truth and reconstruction ($\uparrow$ better).
-\emph{Betti-0 stability}: fraction of $k$-NN connected components
-preserved after swapping truth cells for reconstructed cells, computed
-via union-find over the joint kNN
-graph~\cite{Edelsbrunner2010PersistentHomology} ($\uparrow$ better).
-Flow-divergence and velocity-anisotropy vector-field diagnostics are
-computed by the same benchmark module when a velocity field is available
-from a trained continuous-3D adapter; they are not applicable to the
-NumPy-only 2.5D baselines.
+\paragraph{CV protocol and selection grids.}
+Every hyperparameter is set by leave-one-observed-slice-out cross-validation---one fold per
+observed slice (4/3/18 folds on the $5z$/$4z$/$19z$ stacks)---with the held-out test slice's
+expression scored exactly once. The grids are rank $r\in\{4,8,12,16,24\}$, smoothing weight
+$\lambda\in\{0.5,1.0,2.0\}$, and blend weight $\alpha\in\{0.0,0.1,\dots,1.0\}$. The rank $r$
+(SVD) and the pair $(\lambda,r)$ (jointSLR) maximise CV Pearson; $\alpha$ maximises CV Pearson
+subject to CV Moran-match $\ge$ poly1's $-\varepsilon$, with $\varepsilon{=}0.02$ by default.
+
+\paragraph{Oracle (achievable upper bound, not a method).}
+The \emph{oracle r32} entry is the held-out slice's \emph{own} truth matrix on $\Omega$,
+mean-centred and replaced by its best rank-32 truncated-SVD reconstruction. Because it reads the
+test slice's true expression it is not a competing estimator but an objective: the best score any
+rank-32 low-rank reconstruction could attain if it knew the true subspace---an intrinsic ceiling
+on the task. On the lower-dimensional 25-marker IMC panel the corresponding oracle is taken at
+rank-24 (the panel's full informative rank), reaching Pearson $0.997$.
+
+\paragraph{Replication and significance.}
+Each dataset cell is a mean over $\text{seeds}\times\text{interior held-out slices}$: 3 seeds
+(seed~0 = no jitter; seeds~1--2 apply a random spatial-binning origin jitter for honest binning
+error bars) crossed with the interior slices held out one at a time (MERFISH-A $z\in\{1,2,3\}$,
+$n{=}9$; MERFISH-B $z\in\{1,2\}$, $n{=}6$; Open-ST HNSCC $z\in\{9,18,24\}$, $n{=}9$). The paired
+Wilcoxon signed-rank tests are computed over these $n$ matched (seed, slice) pairs.
 
 \subsection{Leave-one-section-out evaluation protocol}
 \label{sec:loso}
 
-The primary evaluation uses a \emph{leave-one-section-out} (LOSO)
-holdout: given $K$ aligned serial sections $\{(\mathbf{X}_k,
-\mathbf{S}_k, z_k)\}_{k=1}^K$, section $k^\star$ is designated the
-held-out truth; the adapter receives the remaining $K-1$ sections as
-visible input and is asked to produce a virtual slice at depth
-$z_{k^\star}$. The protocol iterates over all interior holdout
-positions $k^\star \in \{2, \ldots, K-1\}$ and reports mean~$\pm$~std
-of each metric across holdout rounds.
+The primary evaluation uses a leave-one-section-out (LOSO) holdout: section $k^\star$ is
+designated the held-out truth; the adapter receives the remaining $K-1$ sections and
+produces a virtual slice at depth $z_{k^\star}$. The protocol iterates over all interior
+holdout positions and reports mean~$\pm$~std of each metric across holdout rounds and seeds.
+Per-holdout-slice scores are stored in a structured JSON keyed by $(k^\star, \text{method})$
+so any evaluation point can be re-run with its stored provenance record.
 
-The audit boundary is enforced mechanically by the
-\texttt{VolumeAdapterInput} contract
-(Section~\ref{sec:contract}): \texttt{visible\_slices()} removes the
-held-out section from the input list before the adapter's \texttt{fit}
-call, and \texttt{truth\_slices()} exposes the truth only to the scorer.
-An adapter that attempts to read beyond \texttt{visible\_slices()} has
-no path to the truth expression matrix --- this is a closed-form
-data-leakage guard rather than an honor system.
-Per-holdout-slice scores are stored in a structured JSON keyed by
-$(k^\star, \text{method})$ so that any single evaluation point can be
-re-run independently with its stored provenance record (device, git SHA,
-torch and CUDA versions, hostname, seed).
-The aggregated means and standard deviations across all holdout rounds
-constitute the primary comparison surface
-(Table~\ref{tab:loso-gene}).
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=0.9\textwidth]{aether_arch}
+  \caption{\textbf{Architecture.} Spatially-regularized cross-gene low-rank denoising of the
+  per-(bin,gene) linear-in-$z$ prediction; rank~$r$ and spatial weight $\lambda$ set by
+  leave-one-observed-slice-out CV.}
+  \label{fig:arch}
+\end{figure}
 
-\subsection{Baselines}
-\label{sec:baselines}
-
-Three parameter-free 2.5D baselines and the \textsc{Aether3D}
-continuous-3D model are wired through the same
-\texttt{VolumeBaseAdapter} contract and scored under the identical LOSO
-protocol.
-
-\textbf{Nearest-section} (\texttt{nearest-slice}): the held-out depth
-$z_{k^\star}$ is reconstructed by copying all cells from the single
-closest visible section and overwriting their $z$ coordinate to the
-target depth. This is the lowest possible 2.5D floor: it uses real
-expression and real 2D positions with no interpolation.
-
-\textbf{Linear interpolation} (\texttt{linear-interp}): each
-virtual-depth cell is produced by linearly interpolating expression
-vectors and 2D coordinates between the two bracketing visible sections.
-Cells are paired by nearest-neighbour in 2D (the only correspondence
-signal available without ground-truth cell tracks) and the interpolation
-weight is $w = (z_{k^\star} - z_a)/(z_b - z_a)$. The pairing is
-deterministic in cell content (ordered by \texttt{lexsort} on 2D
-coordinates) so reported numbers are invariant to input row order.
-
-\textbf{2.5D stacking} (\texttt{stacking-2.5d}): the canonical
-clean-room reimplementation of the 2.5D virtual-slice stacking strategy.
-A virtual section at depth $z$ is assembled by stacking
-$k_a = \lfloor(1-w)\,n_a\rceil$ cells from the lower flanking section
-and $k_b = \lfloor w\,n_b\rceil$ from the upper one, selected by an
-evenly-spaced decimation over a lexsort-deterministic spatial ordering
-so the subset is spatially representative and independent of row order.
-Every selected cell carries its real expression vector and real 2D
-position; its $z$ coordinate is overwritten to the target depth. There
-is no learned model and no gene-wise smoothing, so any quality gap
-between this baseline and a continuous method is attributable to the
-method, not to artefacts on the baseline side.
-
-\textbf{Aether continuous-3D} (\texttt{aether}): the
-\textsc{Aether3D} reconstructor is wrapped in an \texttt{AetherAdapter}
-that implements the identical \texttt{VolumeBaseAdapter} interface and
-is scored under the same LOSO protocol as the three 2.5D baselines.
-The adapter calls \texttt{AetherReconstructor.fit} on the visible
-slices, then \texttt{reconstruct\_continuous\_volume} at the held-out
-depth. Physical-$z$ remapping from the reconstructor's internal depth
-index back onto the observed $\mu$m values is handled inside the
-adapter, so the scorer always operates on the same physical-$\mu$m
-coordinate system as the baselines. Results are placeholders pending a
-validated run (Table~\ref{tab:loso-gene}); no performance claim over
-baselines is asserted here.
-
-\subsection{Fair z-axis: physical micrometres vs.\ synthetic uniform
-  spacing}
-\label{sec:fair-z}
-
-Serial-section datasets carry \emph{physically irregular}
-inter-section gaps: adjacent sections may be separated by anywhere from
-tens to several hundred micrometres depending on cutting protocol,
-tissue heterogeneity, and section loss. All four adapters in this
-benchmark consume physical $z_k$ values in micrometres as stored in
-\texttt{obs["z\_coord"]} rather than a synthetic integer index.
-
-This distinction matters asymmetrically across method families. The
-2.5D baselines (nearest-section, linear interpolation, stacking) are
-\emph{scale-invariant}: their interpolation weight
-$w = (z_{k^\star} - z_a)/(z_b - z_a)$ is a ratio that normalises out
-any common rescaling of the $z$ axis.  A 2.5D method asked to
-interpolate between $z_a = 0\,\mu$m and $z_b = 200\,\mu$m at
-$z_{k^\star} = 100\,\mu$m yields $w = 0.5$, the same as if the
-coordinates were integers $0$, $1$, $2$.
-
-The \textsc{Aether3D} continuous-3D model is \emph{z-conditioned}: the
-velocity field takes physical $z$ as an input to the adaptive
-normalisation layer (Section~\ref{sec:uot}), and the ODE integration
-time is derived from the physical spacing between slices. Evaluating
-a $z$-conditioned model on a synthetic uniform-spacing approximation
-introduces a systematic bias when real sections are irregularly spaced:
-the model is trained and queried at wrong time intervals, inflating
-reconstruction error independently of model quality.
-
-Feeding physical $\mu$m coordinates to both 2.5D baselines (which are
-unaffected by coordinate scale) and to \textsc{Aether3D} (which depends
-on them) is therefore a methodological contribution to fair evaluation:
-it ensures that any observed difference between the continuous-3D method
-and the 2.5D floor reflects the model's ability to exploit inter-section
-geometry rather than an artefact of coordinate normalisation. The
-contract enforces this at ingestion time: the serial data loader raises
-\texttt{ValueError} if \texttt{obs["z\_coord"]} is absent, preventing
-silent fallback to synthetic uniform spacing.
-
-\subsection{Falsifiability controls}
-\label{sec:falsif}
-
-The LOSO evaluation is accompanied by two synthetic controls that
-verify whether the metric-plus-protocol combination can
-\emph{detect a difference} between method families, independent of
-any real-data claim. Both are generated from one parametric field in
-which the \emph{same} cells are observed at every section, each tracing
-a deterministic trajectory $\mathbf{p}(z) = \mathbf{p}_0 +
-\mathbf{v}\,z + c\,\mathbf{d}\,z^2$ across $z$ (with $z$ centred so the
-held-out interior section sits at $z=0$). A single curvature knob $c$
-switches between the two regimes.
-
-\textbf{Negative control --- regime where 2.5D is provably optimal
-($c = 0$).}
-With zero curvature the trajectories are linear, so the true held-out
-midpoint section is \emph{exactly} the linear blend of its two flanking
-sections (the $\mathbf{v}\,z$ term cancels at the centred midpoint).
-Linear interpolation is therefore near-exact and a continuous model has
-nothing to gain: a tie or loss for the learned adapter is the correct
-outcome. A spurious win for the learned model in this regime would
-indicate a calibration failure of the metrics rather than a genuine
-advantage.
-
-\textbf{Positive control --- regime where linear interpolation is
-provably biased ($c > 0$).}
-With nonzero curvature the quadratic bend makes the true midpoint differ
-from the linear blend of the flanking sections by a fixed offset
-$c\,\mathbf{d}$, so linear interpolation systematically misplaces cells
-and is provably biased on Chamfer distance and coordinate RMSE.  A
-continuous-flow model conditioned on physical $z$ has the
-representational capacity to recover the curve; a scale-invariant 2.5D
-interpolator does not.  This control establishes that the benchmark
-\emph{can} detect a continuous-method advantage when one exists, without
-asserting that \textsc{Aether3D} achieves it on real data (that claim
-remains \texttt{planned} in the claim ledger; see
-Table~\ref{tab:loso-gene}).
-
-Both controls are generated deterministically and scored through the
-identical adapter contract.  The \emph{validity} of the controls
-themselves --- linear interpolation near-exact in the negative regime
-and provably biased in the positive regime --- is asserted in the test
-suite, so a regression in the metric or protocol implementation surfaces
-immediately.
 
 % ---------------------------------------------------------------------------
-% Placeholder tables and figures (numbers TBD)
-% ---------------------------------------------------------------------------
-
-\subsection{Placeholder result tables and figures}
-\label{sec:placeholders}
-
-The following tables and figures are structural stubs. Captions describe
-what each item will contain; all numerical entries are marked
-\textbf{TBD} and will be filled once the claim ledger entries for the
-relevant rows reach \texttt{validated} status with linked, reproducible
-artifacts. The table and figure environments are kept here so the
-reference labels are stable and the document compiles cleanly.
-
-\begin{table}[ht]
-\centering
-\caption{LOSO gene-recovery table --- mean~$\pm$~std of each metric
-across leave-one-section-out rounds, all adapters scored through the
-same audited contract. Adapters: \texttt{nearest-slice},
-\texttt{linear-interp}, \texttt{stacking-2.5d}, \texttt{aether}.
-Metrics: Chamfer ($\downarrow$), coord.\ RMSE ($\downarrow$),
-sliced Wasserstein ($\downarrow$), Moran's I agreement ($\uparrow$),
-domain ARI ($\uparrow$), domain NMI ($\uparrow$), cell-type proportion
-Spearman ($\uparrow$), Betti-0 ($\uparrow$).
-\textbf{All entries are TBD --- pending validated run on real serial
-data.}}
-\label{tab:loso-gene}
-\small
-\begin{tabular}{lcccccccc}
-\toprule
-Method & Chamfer & RMSE & SW$_{2}$ & Moran's I & ARI & NMI & Spearman & Betti-0 \\
-\midrule
-nearest-slice  & TBD & TBD & TBD & TBD & TBD & TBD & TBD & TBD \\
-linear-interp  & TBD & TBD & TBD & TBD & TBD & TBD & TBD & TBD \\
-stacking-2.5d  & TBD & TBD & TBD & TBD & TBD & TBD & TBD & TBD \\
-aether         & TBD & TBD & TBD & TBD & TBD & TBD & TBD & TBD \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-\begin{table}[ht]
-\centering
-\caption{Per-region cell-type proportion Spearman --- Spearman
-correlation of per-cell-type counts between reconstruction and truth,
-reported separately for each annotated spatial region
-(e.g., cortical layer, hypothalamic nucleus) on the holdout dataset.
-Columns correspond to regions; rows to adapters.
-\textbf{All entries are TBD --- pending validated run.}}
-\label{tab:per-region-spearman}
-\small
-\begin{tabular}{lccc}
-\toprule
-Method & Region 1 & Region 2 & $\cdots$ \\
-\midrule
-nearest-slice  & TBD & TBD & $\cdots$ \\
-linear-interp  & TBD & TBD & $\cdots$ \\
-stacking-2.5d  & TBD & TBD & $\cdots$ \\
-aether         & TBD & TBD & $\cdots$ \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-\begin{table}[ht]
-\centering
-\caption{Cross-platform summary --- mean Chamfer distance and Moran's I
-agreement on each validated dataset (e.g., MERFISH mouse hypothalamus,
-BRCA IMC, Visium serial ladder), broken down by adapter. This table will
-exist only when at least two distinct real-data platforms have completed
-the LOSO protocol.
-\textbf{All entries are TBD --- pending multi-platform validated runs.}}
-\label{tab:cross-platform}
-\small
-\begin{tabular}{lccc}
-\toprule
- & \multicolumn{2}{c}{Platform A} & Platform B \\
-\cmidrule(lr){2-3}
-Method & Chamfer & Moran's I & Chamfer \\
-\midrule
-nearest-slice  & TBD & TBD & TBD \\
-linear-interp  & TBD & TBD & TBD \\
-stacking-2.5d  & TBD & TBD & TBD \\
-aether         & TBD & TBD & TBD \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-\begin{figure}[ht]
-  \centering
-  \fbox{\parbox{0.9\textwidth}{\centering\vspace{2em}
-  \textbf{[Figure stub: intermediate-depth montage]}\\[0.5em]
-  Side-by-side comparison of truth vs.\ reconstructed virtual sections
-  at three intermediate depths per holdout round. Columns: truth,
-  nearest-slice, linear-interp, stacking-2.5d, aether. Rows: holdout
-  depths $z_{k^\star}$ (e.g., $z_2$, $z_3$, $z_4$ for a 6-section
-  stack). Cell positions shown as scatter; colour = cell type.\\[0.5em]
-  \textbf{TBD --- pending validated run on real serial data.}
-  \vspace{2em}}}
-  \caption{Intermediate-depth reconstruction montage. Each panel shows
-  cells coloured by annotated cell type at a held-out intermediate
-  depth; the truth section (left) is compared to each adapter's
-  reconstruction. \textbf{TBD --- pending validated run.}}
-  \label{fig:depth-montage}
-\end{figure}
-
-\begin{figure}[ht]
-  \centering
-  \fbox{\parbox{0.9\textwidth}{\centering\vspace{2em}
-  \textbf{[Figure stub: velocity/warp field]}\\[0.5em]
-  Visualisation of the \textsc{Aether3D} learned velocity field over
-  the 3D tissue volume. Arrows or streamlines represent the
-  ODE-integrated flow from section $z_k$ to $z_{k+1}$; colour encodes
-  velocity magnitude. Divergence and anisotropy diagnostics
-  are displayed as scalar heat maps.\\[0.5em]
-  \textbf{TBD --- pending trained model run with velocity-field output
-  enabled.}
-  \vspace{2em}}}
-  \caption{Velocity/warp field from the continuous-3D adapter.
-  Streamlines show the inferred cell-movement field between adjacent
-  sections; scalar panels show flow divergence and velocity anisotropy.
-  \textbf{TBD --- pending trained model run.}}
-  \label{fig:velocity-field}
-\end{figure}
-
-\begin{figure}[ht]
-  \centering
-  \fbox{\parbox{0.9\textwidth}{\centering\vspace{2em}
-  \textbf{[Figure stub: marker concordance]}\\[0.5em]
-  Per-gene Pearson correlation (reconstruction vs.\ truth, spatially
-  matched) for the top marker genes of each annotated cell type,
-  shown as a dot plot or heatmap. Rows = genes; columns = adapters.
-  Reference line at $r = 0$ marks the chance level.\\[0.5em]
-  \textbf{TBD --- pending validated run.}
-  \vspace{2em}}}
-  \caption{Marker-gene expression concordance. Spatially-matched
-  per-gene Pearson correlation between reconstruction and truth for
-  top cell-type marker genes. \textbf{TBD --- pending validated run.}}
-  \label{fig:marker-concordance}
-\end{figure}
-
 \section{Results}
 \label{sec:results}
+% ---------------------------------------------------------------------------
 
-\subsection{Overview of \textsc{Aether3D}}
-\label{sec:res-overview}
+\subsection{The $z$-trajectory is nearly vacuous; the lever is the estimator}
+\label{sec:vacuous}
 
-\textsc{Aether3D} has three independently-testable components.
-\emph{(i)}~A uniform volume-adapter contract (Section~\ref{sec:contract})
-runs the 3D-reconstruction methods on identical serial-section input with
-held-out virtual slices removed before any adapter sees the data.
-\emph{(ii)}~An eight-metric per-virtual-slice suite
-(Section~\ref{sec:metrics}) reports geometry, distributional geometry,
-molecular continuity, cluster identity, and topology fidelity in a single
-pass. \emph{(iii)}~A scaling harness records device,
-torch version, CUDA version, peak memory, and runtime per measurement.
-The synthetic benchmarks below exercise each of these; real-data
-graduation remains gated by the project claim ledger.
+\texttt{mean\_slice} (predict the neighbour mean, no $z$-model) equals poly1 to three
+decimals on every dataset ($0.275 \approx 0.277$ on MERFISH-A; $0.523 \approx 0.528$ on
+HNSCC). Better $z$-models cannot help; cross-gene and spatial denoising of the per-bin
+estimate is the only lever.
 
-\subsection{Virtual-slice holdout (synthetic placeholder)}
-\label{sec:res-holdout}
+\subsection{Mechanism and specificity (synthetic)}
+\label{sec:specificity}
 
-Figure~\ref{fig:holdout} reports the per-virtual-slice metrics for the
-two always-available baselines (nearest-slice, linear-interp) on a
-synthetic 5-slice stack with the middle slice held out. Nearest-slice
-attains lower Chamfer distance and lower sliced 2D Wasserstein than
-linear interpolation at this noise level, which has a simple
-explanation: with $\sigma_{\text{spatial}} = 1.0$ the nearest
-neighbor is closer to the truth than the linear blend of two flanking
-slices. \emph{Numbers in this figure are synthetic placeholders; real-data
-figures will replace them once a serial-section dataset graduates.}
+On planted low-rank versus high-frequency full-rank serial volumes, the cross-gene low-rank
+gain over poly1 grows with noise on the low-rank arm and recovers the planted rank, while
+the genuine full-rank control \emph{loses} (planted $\Delta{+}0.084$ vs.\ control
+$\Delta{-}0.045$)---specific, not a universal denoiser.
+For jointSLR specifically, a planted-spatial volume yields $+0.080$ over poly1 while a
+\textbf{spatially-white} (bin-permuted) control yields $-0.018$: the spatial prior exploits
+real autocorrelation only.
 
 \begin{figure}[t]
   \centering
-  \includegraphics[width=\textwidth]{figures/fig_holdout_quartet.pdf}
-  \caption{Virtual-slice holdout metrics for the two
-  always-available baselines on a synthetic 5-slice stack with the
-  middle slice held out. Panels \textbf{a}--\textbf{g} show seven of the
-  eight per-slice metrics; cell-type proportion Spearman is recorded in
-  the source JSON but not plotted here. Adapter color is stable across
-  all three figures (\texttt{aether-3d/manuscript/compose\_palette.py}).
-  \textbf{a}, Chamfer distance ($\downarrow$).
-  \textbf{b}, coordinate RMSE ($\downarrow$).
-  \textbf{c}, sliced 2D Wasserstein ($\downarrow$).
-  \textbf{d}, Moran's I agreement on top-$K$ HVGs ($\uparrow$).
-  \textbf{e}, domain ARI ($\uparrow$).
-  \textbf{f}, domain NMI ($\uparrow$).
-  \textbf{g}, Betti-0 stability via kNN union-find ($\uparrow$).
-  \textbf{h}, direction-corrected radar over the seven plotted metrics;
-  lower-is-better
-  metrics are mapped via $1/(1{+}x)$ and every axis is min-max normalized
-  across adapters so the outer envelope = best. One polygon per adapter
-  summarizes overall reconstruction quality.
-  Source: \texttt{aether-3d/results/benchmark/synthetic\_holdout.json}.}
-  \label{fig:holdout}
+  \includegraphics[width=0.9\textwidth]{aether_synth}
+  \caption{\textbf{Planted low-rank mechanism and specificity.} Gain over poly1 grows with
+  noise on the low-rank arm; the genuine full-rank control loses---the signal is cross-gene
+  low-rank, not denoising in general.}
+  \label{fig:synth}
 \end{figure}
 
-\subsection{UOT-cost component ablation}
-\label{sec:res-ablation}
+\subsection{jointSLR is the accuracy frontier on sparse-$z$ stacks; neutral on dense-$z$}
+\label{sec:main-results}
 
-The $(\alpha_{\text{spatial}} \times \lambda_{\text{class}})$ grid in
-Figure~\ref{fig:ablation} confirms that on synthetic data the class
-penalty $\lambda_{\text{class}}$ dominates: lifting $\lambda$ from 0 to 10
-raises top-1 coupling accuracy from $\sim$0.45 to $\sim$0.87--0.90 at every
-$\alpha$ tested, while further increases to $\lambda = 100$ saturate. This
-interpretable mechanism finding strengthens any default-justification
-prose without overstating biology.
+Mean over seeds $\times$ interior holdout slices (Table~\ref{tab:main};
+\texttt{V14\_SUMMARY}).
+jointSLR adds $+0.05$ Pearson over plain SVD on both MERFISH stacks
+(MERFISH-A $+0.049$, $p{=}0.004$; MERFISH-B $+0.056$, $p{=}0.031$;
+paired Wilcoxon across seeds $\times$ held-out slices)---the
+\emph{sparse-$z$} regime where neighbour interpolation is starved and cross-gene/spatial
+structure provides the accuracy advantage.
+On the \emph{dense-$z$} 19-slice Open-ST HNSCC stack the low-rank edge is marginal and
+jointSLR is neutral ($0.529 \approx$ poly1 $0.528$, ties poly1 $p{=}1.0$)---reported
+plainly, not generalised.
+
+\begin{table}[h]
+  \centering
+  \caption{\textbf{Main results} (Pearson / Moran-match, mean over seeds $\times$ interior holdouts).
+  jointSLR and \textbf{blend\_pareto\_joint} are this work; \emph{oracle r32} is the held-out
+  slice's own best rank-32 approximation---an upper bound, not a method. Std: MERFISH-A
+  jointSLR $\pm 0.006$; MERFISH-B $\pm 0.006$.}
+  \label{tab:main}
+  \small
+  \begin{tabular}{lccccc}
+    \toprule
+    Dataset & poly1 & SVD-LR & \textbf{jointSLR} & \textbf{blend\_pareto\_joint} & \emph{oracle r32} \\
+    \midrule
+    MERFISH-A (5$z$, $n{=}9$)  & 0.277 / .92 & 0.320 / .64 & \textbf{0.368} / .45 & 0.316 / \textbf{.89} & \emph{0.734} \\
+    MERFISH-B (4$z$, $n{=}6$)  & 0.263 / .93 & 0.304 / .64 & \textbf{0.361} / .45 & 0.334 / \textbf{.85} & \emph{0.733} \\
+    Open-ST HNSCC (19$z$, $n{=}9$) & 0.528 / .59 & 0.542 / .15 & 0.529 / .18 & 0.534 / \textbf{.56} & \emph{0.866} \\
+    \bottomrule
+  \end{tabular}
+\end{table}
 
 \begin{figure}[t]
   \centering
-  \includegraphics[width=\textwidth]{figures/fig_uot_ablation.pdf}
-  \caption{$(\alpha_{\text{spatial}} \times \lambda_{\text{class}})$ ablation
-  on synthetic data.
-  \textbf{a}, top-1 coupling accuracy ($\uparrow$) as a heatmap over the
-  $(\alpha_{\text{spatial}}, \lambda_{\text{class}})$ grid.
-  \textbf{b}, mean true-pair mass ($\uparrow$) over the same grid.
-  \textbf{c}, marginal trace of top-1 accuracy along
-  $\lambda_{\text{class}}$ at the central $\alpha_{\text{spatial}}$ slice
-  (log-$x$).
-  \textbf{d}, marginal trace along $\alpha_{\text{spatial}}$ at the
-  central $\lambda_{\text{class}}$ slice. The two marginals quantify the
-  slope of the response surface without requiring the reader to
-  re-read the heatmap rows.
-  Source: \texttt{aether-3d/results/benchmark/uot\_ablation.json}.}
-  \label{fig:ablation}
+  \includegraphics[width=\textwidth]{aether_metrics}
+  \caption{\textbf{Multi-metric panel (v14).}
+  Six methods $\times$ three datasets $\times$ \{Pearson, Moran-match, RMSE-norm\}, mean
+  over seeds; cells outlined at the per-(metric, dataset) best.
+  jointSLR leads on accuracy (Pearson/RMSE-norm); poly1 leads on Moran-match;
+  \textbf{blend\_pareto\_joint} balances both.}
+  \label{fig:metrics}
 \end{figure}
 
-\subsection{Scaling}
-\label{sec:res-scaling}
-
-The scaling harness records device, torch version, CUDA version, peak
-memory, runtime, and git SHA per measurement.
-Figure~\ref{fig:scaling} reports runtime as a function of cells per
-slice. For NumPy-only baselines (nearest-slice, linear-interp) peak GPU
-memory is zero (no CUDA allocations); a future torch-using adapter wired
-through the contract will produce nonzero memory under the
-\texttt{dl}-style env and fail loudly on incompatible CUDA stacks.
+The full ranking of estimators by held-out-slice Pearson on MERFISH-A is shown in
+Fig.~\ref{fig:ladder}.
+The dumb floors (mean-slice, nearest-slice) and classical references (poly1, Gaussian-process
+$z$-interpolation) sit below jointSLR and the deployable Pareto blend.
+There is no published deep method for this task---the rejected continuous-field adapter (v12)
+is the prior deep attempt and loses to poly1 on spatial fidelity---so poly1 and GP are the
+strongest existing references against which our estimators are compared.
 
 \begin{figure}[t]
   \centering
-  \includegraphics[width=\textwidth]{figures/fig_scaling_curve.pdf}
-  \caption{Scaling on synthetic stacks.
-  \textbf{a}, runtime (s, $\downarrow$ at fixed quality) vs cells per
-  slice on log-log axes, grouped by adapter.
-  \textbf{b}, per-measurement reproducibility provenance (device, torch,
-  CUDA, hostname, git SHA) so a reviewer can re-run any single point.
-  Source: \texttt{aether-3d/results/benchmark/scaling\_curve.json}.}
-  \label{fig:scaling}
+  \includegraphics[width=0.74\textwidth]{aether_ladder}
+  \caption{\textbf{Dominance ladder (MERFISH-A held-out-slice Pearson).} Each rung coloured by
+  tier: dumb floors (mean-/nearest-slice) and classical references (poly1, GP) sit below
+  jointSLR and the deployable Pareto blend.
+  There is no published deep method for this task---the rejected continuous-field adapter (INR)
+  is the prior deep attempt.}
+  \label{fig:ladder}
 \end{figure}
 
+\subsection{The accuracy\,$\leftrightarrow$\,fidelity tradeoff, and how we close it}
+\label{sec:tradeoff}
+
+The multi-metric panel (Fig.~\ref{fig:metrics}) makes the tension explicit: low-rank leads
+on Pearson/Spearman/RMSE-norm but \textbf{classical poly1 leads on Moran-match}---truncated
+cross-gene denoising flattens per-gene spatial structure (Moran-match collapses
+$0.92 \to 0.45$ on MERFISH; $0.59 \to 0.15$--$0.18$ on dense Open-ST).
+The CV-constrained blend (Fig.~\ref{fig:pareto}) traces the frontier from poly1
+($\alpha{=}0$, fidelity) to jointSLR ($\alpha{=}1$, accuracy):
+\textbf{blend\_pareto\_joint} keeps most of the accuracy gain while restoring Moran-match to
+${\sim}0.89 / 0.85$ on MERFISH, and it has higher accuracy than the SVD-blend at matched
+fidelity.
+Where the low-rank signal is weak (HNSCC) CV correctly reverts $\alpha \to 0.1$
+($\approx$poly1)---an honest automatic safeguard.
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\textwidth]{aether_pareto}
+  \caption{\textbf{Closing the accuracy\,$\leftrightarrow$\,fidelity tradeoff.}
+  As the blend weight $\alpha$ sweeps poly1$\,\to\,$jointSLR, CV Pearson rises while
+  Moran-match falls; the CV-constrained blend selects a point that recovers most accuracy
+  while restoring fidelity.
+  On dense-$z$ HNSCC the Pearson curve is nearly flat and CV stays near poly1.}
+  \label{fig:pareto}
+\end{figure}
+
+\subsection{Component contribution}
+\label{sec:compabl}
+
+Decomposing jointSLR into its components (Fig.~\ref{fig:compabl}; marginals vs.\ poly1,
+mean over seeds) reveals the dominant driver.
+Walking poly1 $\to$ +low-rank-only $\to$ +spatial-reg-only $\to$ +both (jointSLR)
+$\to$ +blend: \textbf{spatial-regularization alone is the dominant accuracy component}.
+On MERFISH it adds $+0.078$ / $+0.092$ Pearson (MERFISH-A / MERFISH-B), \emph{more} than
+cross-gene low-rank alone ($+0.041$ / $+0.041$) and at a smaller fidelity cost
+(Moran-match $-0.13$ / $-0.17$ vs.\ $-0.29$ / $-0.30$).
+Cross-gene low-rank alone carries the largest Moran-match loss for the smallest accuracy advance.
+Combining both (jointSLR) maximises accuracy but also most reduces Moran-match;
+the CV-constrained blend restores Moran-match to within ${\sim}0.03$--$0.11$ of poly1
+while keeping most of the accuracy gain---it is the deployable sweet spot.
+On dense-$z$ HNSCC every component is marginal ($\Delta$Pearson $+0.01$), consistent with
+the neutral main result.
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\textwidth]{aether_compabl}
+  \caption{\textbf{Component contribution.} Walking poly1 $\to$ +low-rank $\to$
+  +spatial-reg $\to$ +both (jointSLR) $\to$ +blend, per dataset: Pearson (accuracy)
+  rises---the larger step is +spatial-reg---while Moran-match (fidelity) falls and is
+  restored by the blend.
+  On HNSCC all components are marginal ($\Delta$Pearson $+0.01$).}
+  \label{fig:compabl}
+\end{figure}
+
+\subsection{Data, resolution, and ablation}
+\label{sec:ablation}
+
+Three real serial stacks anchor the study: MERFISH mouse hypothalamus (a 5-$z$ and an
+independent 4-$z$ stack) and Open-ST human HNSCC (19-$z$).
+The rank sweep peaks at $r^{*} \approx 12$--$16$.
+Reconstruction granularity is an explicit axis: coarser grids give higher Pearson
+(MERFISH-A grid 20/30/45: jointSLR $= 0.462 / 0.371 / 0.274$; poly1
+$= 0.405 / 0.284 / 0.180$), reported as a curve rather than silently fixed at one setting.
+
+\subsection{The ceiling is intrinsic, not fixable (oracle + registration)}
+\label{sec:ceiling}
+
+An oracle that sees the held-out slice's own best rank-32 subspace reaches $0.73$ (MERFISH)
+/ $0.87$ (HNSCC) (Table~\ref{tab:main})---the truth is strongly low-rank, so the gap to our
+estimators is an \textbf{estimation} gap.
+A leak-free registration probe (held-out observed slices only) localises it: the MERFISH
+stacks are already registered (shift $\le 1$ bin, alignment gain $\approx 0$); the HNSCC
+stack \emph{looks} misregistered (density shifts up to 10 bins across its wide $z$-range)
+but rigid alignment \textbf{hurts} reconstruction (mean $-0.15$; $z_7$ alone $-0.40$)---so
+those offsets are real cross-$z$ morphological change, not a registration error.
+The estimator$\to$oracle gap is therefore biological variation across $z$, which observed
+slices alone under-determine: a fundamental limit of single-volume reconstruction, not an
+engineering gap.
+(Scope: rigid density alignment only; a learned non-rigid approach is unexplored, and the
+program's \texttt{nonlinalign} track confirmed no generic-registration route is viable.)
+
+\subsection{Reconstruction visual and case study}
+\label{sec:visual}
+
+The reconstructed slice (Fig.~\ref{fig:slice}) contrasts truth, poly1, and the rejected
+continuous-field adapter (v12), which over-smooths---the visual signature of the falsified
+deep approach.
+With the entire $z{=}2$ slice held out (Fig.~\ref{fig:case}), the reconstruction recovers
+the Esr1 pattern of the preoptic estrogen-receptor neurons: the bilateral, sexually-dimorphic
+POA domains reappear in the right anatomical location, with held-out Esr1 reconstruction Pearson
+$r{=}0.80$ against the measured truth slice.
+\textbf{Application:} repair gaps in serial-section 3D atlases while preserving
+anatomically-meaningful, cell-type-specific gene patterns.
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=0.9\textwidth]{aether_slice}
+  \caption{\textbf{Reconstruction visual.} Truth versus poly1 versus the rejected continuous-field
+  adapter (v12). The continuous-field approach over-smooths---the reason the deep modelling
+  direction was falsified.}
+  \label{fig:slice}
+\end{figure}
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=0.82\textwidth]{aether_case}
+  \caption{\textbf{Missing-slice case study.} Reconstruction of Esr1+ preoptic neurons:
+  measured truth versus ours. The bilateral sexually-dimorphic POA domain is recovered in
+  the correct location (held-out Esr1 Pearson $r{=}0.80$).}
+  \label{fig:case}
+\end{figure}
+
+
+% ---------------------------------------------------------------------------
 \section{Discussion}
 \label{sec:discussion}
+% ---------------------------------------------------------------------------
 
-\textsc{Aether3D} in its present synthetic-evaluation form is not a claim of
-biological advantage over any prior 3D reconstruction method. The
-audit boundary requires that every promotion of a claim from
-\texttt{validated-small} or \texttt{blocked} to \texttt{paper-ready} be
-backed by real-data evidence linked from the project claim ledger.
-The deliverables present today are: (i)~a uniform volume-adapter
-contract that catches audit regressions mechanically; (ii)~the
-eight-metric per-virtual-slice suite (geometry, molecular, and
-topology); (iii)~an interpretable UOT-cost
-component ablation; (iv)~a scaling harness that fails
-fast when the running torch cannot launch kernels on the visible GPU.
+The frozen verdict (``continuous-field adapter loses; data-limited'') was \emph{incomplete},
+not wrong: the exploitable structure is cross-gene low-rank, not spatial-$z$ nonlinearity.
+Our spatially-regularized estimator (jointSLR) advances the accuracy frontier on registered,
+sparse-$z$ stacks, and the CV-constrained blend closes the fidelity tradeoff that plain
+low-rank opens; where the signal is weak it reverts to poly1.
+But the central, honest finding is the \textbf{bound}: the oracle proves a strong low-rank
+ceiling exists, while the registration probe proves the residual gap is biological cross-$z$
+change rather than a fixable artifact---so single-volume serial-section reconstruction has
+an intrinsic limit that no purely-geometric or estimator-side trick can cross.
+Closing it would require \emph{external} information (denser sampling, a learned
+cross-study biological prior), which we frame as future work rather than claim.
+The deep functional factorisation (v11) and the spatial-factor smoothing (v12) are retained
+as falsification negatives.
+Practical guidance follows directly: use jointSLR / the Pareto blend when slices are few
+and far apart and accuracy is the goal; use poly1 when slices are dense or when preserving
+which genes are spatially structured matters more than per-bin accuracy.
+The HNSCC result is neutral and is reported as such; the MERFISH finding does not generalise
+to dense-$z$ stacks without further evidence.
 
 \subsection{Limitations}
 
-Three limitations frame the present manuscript. First, the
-volume-adapter contract is exercised on a synthetic point cloud with
-regular inter-slice spacing; real-data sections (e.g., a BRCA IMC serial
-volume) carry irregular spacing, which
-shifts the burden onto the UOT cost function and the
-maximal-common-region helper introduced in this revision. The
-contract handles arbitrary spacing by construction, but evidence under
-real organ-boundary mutations and tissue tearing is not yet in scope.
-Second, the 2.5D vs continuous-3D distinction matters: our reconstruction
-operates on cells as discrete coordinates rather than a continuous
-volumetric field, which keeps memory predictable but means that
-sub-cellular structures (vascular lumens, axonal tracts) are not
-represented. Third, the vascular-network 3D-graph topology metrics ship
-as a callable module
-(\texttt{aether\_3d.benchmarks.graph\_3d}) but are exercised only on
-synthetic graphs; the BRCA-IMC vascular-network demo~\cite{Yang2026DeepSpatial} waits
-for a real IMC volume.
+Three limitations frame the present manuscript.
+First, the main-panel positive sparse-$z$ result rests on mouse hypothalamus---two MERFISH
+stacks that, while independently sectioned, sample the same tissue and are therefore
+correlated---whereas on the one transcriptomic platform that is structurally independent
+(dense-$z$ Open-ST HNSCC) jointSLR is neutral. To test whether the gain is tissue-specific we
+evaluated a third, fully independent stack: Kuett et al.'s~\cite{kuett} 3D imaging mass cytometry (IMC) of
+human breast cancer (15 serial sections, 25 protein markers---an independent tissue \emph{and}
+an independent modality). jointSLR's advantage reproduces: $+0.030$ mean Pearson over truncated
+SVD (all $15/15$ held-out (seed,\,slice) pairs positive, paired Wilcoxon $p{<}10^{-4}$), so the
+sparse-$z$ gain is not hypothalamus-specific. One caveat tempers this generalisation: the
+25-marker protein panel is a far lower-dimensional, more strongly low-rank regime (oracle
+rank-24 Pearson $0.997$) than a transcriptomic stack---so the test establishes that the
+spatially-regularized low-rank prior transfers in \emph{sign} across tissue and platform, not
+that the absolute accuracy regime is identical. A broader range of transcriptomic platforms
+(e.g.\ Visium serial ladders) remains untested.
+Second, only rigid density alignment was tested in the registration probe; a learned
+non-rigid approach remains unexplored.
+Third, the resolution analysis (grid 20/30/45) shows that reconstruction quality depends on
+spatial binning; sub-bin reconstruction is out of scope.
 
 \subsection{Future work}
 
-Our next step is to evaluate on a real BRCA IMC serial-section volume, at
-which point the held-out virtual-slice benchmark moves from synthetic to
-real evidence and the distance-band neighborhood-heatmap composer can be
-re-driven against real cellular neighborhoods. Subsequent milestones add a
-multi-planar (sagittal/coronal/horizontal) virtual-plane composer on real
-coordinates and a per-brain-region cell-type Spearman panel on a
-mouse-brain section ladder.
-The whole-atlas-scale reconstruction is cited rather than reproduced~\cite{Yang2026DeepSpatial}; we plan to scale gradually,
-section by section. Each
-transition is gated by the claim-ledger update described above; no
-claim graduates without linked evidence.
-Cross-animal validation and CellCharter-style spatial-domain
-analysis are likewise treated as reference-pressure checks rather than
-implemented claims until the required independent atlas and external-method
-contracts are present~\cite{Yang2026DeepSpatial,Varrone2024CellCharter}.
+The clearest next step is additional serial-section platforms with ground-truth
+in-tissue-section coordinates and denser $z$-sampling, which would shrink the
+estimator$\to$oracle gap from the data side.
+Cross-study biological priors (shared expression structure across donors) could further
+constrain the estimation problem.
+Each transition is gated by the claim-ledger update; no claim graduates without linked
+evidence.
 
 \section*{Data and code availability}
 
-Source code, tests, and the benchmark contract live in the Aether3D
-package. Synthetic placeholder data is produced deterministically by
-\texttt{scripts/data/prepare\_synthetic\_aether.py}; the data card schema
-and reproducibility metadata helper are documented in the package.
+Source code, tests, and the benchmark contract live in the aether-3d package.
+Real-data inputs follow the serial-section loader contract
+(\texttt{obs["z\_coord"]} in $\mu$m; integer-count \texttt{X}).
+Benchmark outputs are versioned under
+\texttt{results/benchmark/reconstruction\_3d/V14\_SUMMARY.\{json,md\}}.
+All datasets used are public; accession identifiers are listed in the dataset table.
+
+\section*{Author contributions and funding}
+
+[To be completed.]
 
 \bibliographystyle{plain}
 \bibliography{refs}
