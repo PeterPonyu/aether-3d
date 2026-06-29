@@ -1,6 +1,0 @@
-{
-  "title": "Distance-band neighborhood enrichment (synthetic placeholder)",
-  "source": "compose_neighborhood_heatmap._synthetic_enrichment",
-  "real_data_contract": "Replace _synthetic_enrichment() with a loader that calls aether_3d.benchmarks.neighborhood.radius_neighborhood_enrichment over each query label and stacks per_celltype_enrichment values into a (target \u00d7 neighbor) matrix; see docs/DATA_PREP_CALENDAR.md Day 7 for real IMC inputs.",
-  "rendered_path": "fig_neighborhood_heatmap_skeleton.png"
-}
